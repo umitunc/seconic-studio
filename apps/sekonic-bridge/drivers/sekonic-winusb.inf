@@ -1,0 +1,55 @@
+; Universal WinUSB INF for Sekonic Optical Mark Readers (VID_0A41)
+[Version]
+Signature   = "$Windows NT$"
+Class       = USBDevice
+ClassGUID   = {88BAE032-5A81-49f0-BC3D-A4FF138216D6}
+Provider    = %ManufacturerName%
+DriverVer   = 11/16/2026,1.0.0.0
+
+[Manufacturer]
+%ManufacturerName% = Standard,NTamd64,NTarm64
+
+[Standard.NTamd64]
+%DeviceName_SR2300% = USB_Install, USB\VID_0A41&PID_0002
+%DeviceName_SR3500% = USB_Install, USB\VID_0A41&PID_1004
+%DeviceName_SR1800% = USB_Install, USB\VID_0A41&PID_1008
+%DeviceName_SR55D%  = USB_Install, USB\VID_0A41&PID_2000
+%DeviceName_SR45C%  = USB_Install, USB\VID_0A41&PID_2002
+%DeviceName_SMF%    = USB_Install, USB\VID_0A41&PID_2003
+%DeviceName_SC1500% = USB_Install, USB\VID_0A41&PID_3005
+%DeviceName_SP100%  = USB_Install, USB\VID_0A41&PID_5000
+
+[Standard.NTarm64]
+%DeviceName_SR2300% = USB_Install, USB\VID_0A41&PID_0002
+%DeviceName_SR3500% = USB_Install, USB\VID_0A41&PID_1004
+%DeviceName_SR1800% = USB_Install, USB\VID_0A41&PID_1008
+%DeviceName_SR55D%  = USB_Install, USB\VID_0A41&PID_2000
+%DeviceName_SR45C%  = USB_Install, USB\VID_0A41&PID_2002
+%DeviceName_SMF%    = USB_Install, USB\VID_0A41&PID_2003
+%DeviceName_SC1500% = USB_Install, USB\VID_0A41&PID_3005
+%DeviceName_SP100%  = USB_Install, USB\VID_0A41&PID_5000
+
+[USB_Install]
+Include = winusb.inf
+Needs   = WINUSB.NT
+
+[USB_Install.Services]
+Include = winusb.inf
+Needs   = WINUSB.NT.Services
+
+[USB_Install.HW]
+AddReg = Dev_AddReg
+
+[Dev_AddReg]
+HKR,,DeviceInterfaceGUIDs,0x10000,"{c4fa33ee-2253-4394-8a32-389e13b03fd3}","{dc78e193-e752-4b23-bc0b-4da9a52ec825}"
+
+[Strings]
+ManufacturerName    = "Sekonic Studio / Open OMR Driver"
+DeviceName_SR2300   = "SEKONIC SR-2300/5500 (WinUSB)"
+DeviceName_SR3500   = "SEKONIC SR-3500/6000/6500 (WinUSB)"
+DeviceName_SR1800   = "SEKONIC SR-1800/1800EX (WinUSB)"
+DeviceName_SR55D    = "SEKONIC SR-55D CIS (WinUSB)"
+DeviceName_SR45C    = "SEKONIC SR-45C/38C (WinUSB)"
+DeviceName_SMF      = "SEKONIC SMF/Hybrid (WinUSB)"
+DeviceName_SC1500   = "SEKONIC SC-1500 (WinUSB)"
+DeviceName_SP100    = "SEKONIC SP-100 (WinUSB)"

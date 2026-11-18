@@ -1,0 +1,15 @@
+[package]
+name = "sekonic-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sekonic-schema = { path = "../sekonic-schema" }
+async-trait.workspace = true
+tokio.workspace = true
+bytes.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+nusb = "0.1"
+tokio-serial = "5.4"

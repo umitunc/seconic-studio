@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <!-- Partner Center'dan aldığınız Identity Name ve Publisher CN bilgisini buraya girin -->
+  <Identity
+    Name="Kurum.SekonicStudio"
+    Publisher="CN=00000000-0000-0000-0000-000000000000"
+    Version="0.1.2.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Sekonic Studio</DisplayName>
+    <PublisherDisplayName>Kurum Teknoloji</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="0.1.2.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="tr-TR" />
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="SekonicStudio" Executable="sekonic-bridge.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Sekonic Studio"
+        Description="Sekonic Optik Okuyucular (SR-55D, SR-1800EX, SR-3500, SR-6000, SR-6500) için doğrudan okuma ve ölçme-değerlendirme entegrasyon uygulaması."
+        BackgroundColor="#18181b"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

@@ -1,0 +1,10 @@
+[package]
+name = "sekonic-grader"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sekonic-schema = { path = "../sekonic-schema" }
+serde.workspace = true
+base64.workspace = true

@@ -1,0 +1,69 @@
+# Cache & Temp
+.cache/
+docs/reverse-engineering/
+*.tmp
+*.temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Rust / Cargo / Tauri / WASM
+*.tmp
+*.temp
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Rust / Cargo / Tauri / WASM
+target/
+**/*.rs.bk
+pkg/
+apps/sekonic-bridge/src-tauri/gen/schemas/
+
+# Node.js / TypeScript / Vite
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+coverage/
+
+# Windows MSIX & Signing Artifacts
+apps/sekonic-bridge/msix/out/
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.pfx
+*.p12
+
+# Python (tools/re_verify)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local Databases / WAL
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# OS & Editors
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

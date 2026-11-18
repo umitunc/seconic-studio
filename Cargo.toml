@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sekonic-schema",
+    "crates/sekonic-transport",
+    "crates/sekonic-proto-omr",
+    "crates/sekonic-proto-cis",
+    "crates/sekonic-grader",
+    "crates/sekonic-sim",
+    "crates/sekonic-sync",
+]
+
+[workspace.package]
+version = "0.1.2"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+bytes = "1.9"
+async-trait = "0.1"
+tracing = "0.1"
+base64 = "0.22"
+tokio = { version = "1.42", features = ["sync", "time", "macros", "io-util", "rt"] }

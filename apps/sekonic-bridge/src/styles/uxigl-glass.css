@@ -1,0 +1,157 @@
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+  --uxigl-bg: #f1f2f4;
+  --uxigl-surface: rgba(255, 255, 255, 0.92);
+  --uxigl-surface-sub: #e9ebef;
+  --uxigl-text: #18181b;
+  --uxigl-text-muted: #71717a;
+  --uxigl-border: rgba(24, 24, 27, 0.1);
+  --uxigl-shadow: 0 2px 12px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+  --uxigl-btn-bg: #ffffff;
+  --uxigl-btn-hover: #e4e4e7;
+  --uxigl-primary-bg: #18181b;
+  --uxigl-primary-hover: #27272a;
+  --uxigl-primary-text: #fafafa;
+  --uxigl-accent-soft: rgba(24, 24, 27, 0.07);
+  --uxigl-input-bg: #ffffff;
+  --uxigl-modal-backdrop: rgba(24, 24, 27, 0.35);
+  --uxigl-scroll-track: #e9ebef;
+  --uxigl-scroll-thumb: #c4c7ce;
+  --uxigl-scroll-thumb-hover: #9ca3af;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --uxigl-bg: #111214;
+  --uxigl-surface: rgba(24, 25, 28, 0.88);
+  --uxigl-surface-sub: #202226;
+  --uxigl-text: #f4f4f5;
+  --uxigl-text-muted: #a1a1aa;
+  --uxigl-border: rgba(255, 255, 255, 0.1);
+  --uxigl-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --uxigl-btn-bg: #202226;
+  --uxigl-btn-hover: #2c2f36;
+  --uxigl-primary-bg: #e4e4e7;
+  --uxigl-primary-hover: #ffffff;
+  --uxigl-primary-text: #111214;
+  --uxigl-accent-soft: rgba(255, 255, 255, 0.08);
+  --uxigl-input-bg: #18191c;
+  --uxigl-modal-backdrop: rgba(0, 0, 0, 0.72);
+  --uxigl-scroll-track: #18191c;
+  --uxigl-scroll-thumb: #34373f;
+  --uxigl-scroll-thumb-hover: #525661;
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--uxigl-scroll-thumb) var(--uxigl-scroll-track);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--uxigl-scroll-track);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--uxigl-scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid var(--uxigl-scroll-track);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--uxigl-scroll-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+body {
+  margin: 0;
+  background: var(--uxigl-bg);
+  color: var(--uxigl-text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.uxigl-glass-card {
+  background: var(--uxigl-surface);
+  color: var(--uxigl-text);
+  backdrop-filter: blur(18px) saturate(110%);
+  -webkit-backdrop-filter: blur(18px) saturate(110%);
+  border: 1px solid var(--uxigl-border);
+  border-radius: 12px;
+  box-shadow: var(--uxigl-shadow);
+}
+
+.uxigl-subcard {
+  background: var(--uxigl-surface-sub);
+  border: 1px solid var(--uxigl-border);
+  border-radius: 8px;
+}
+
+.uxigl-select {
+  background: var(--uxigl-input-bg);
+  color: var(--uxigl-text);
+  border: 1px solid var(--uxigl-border);
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  outline: none;
+}
+
+.uxigl-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--uxigl-accent-soft);
+  color: var(--uxigl-text);
+  border: 1px solid var(--uxigl-border);
+}
+
+.uxigl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--uxigl-border);
+  background: var(--uxigl-btn-bg);
+  color: var(--uxigl-text);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.uxigl-btn:hover {
+  background: var(--uxigl-btn-hover);
+}
+
+.uxigl-btn-primary {
+  background: var(--uxigl-primary-bg);
+  border-color: var(--uxigl-primary-bg);
+  color: var(--uxigl-primary-text);
+}
+
+.uxigl-btn-primary:hover {
+  background: var(--uxigl-primary-hover);
+}
+
+.uxigl-btn-danger {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+}

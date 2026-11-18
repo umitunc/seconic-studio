@@ -1,0 +1,15 @@
+[package]
+name = "sekonic-proto-cis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sekonic-schema = { path = "../sekonic-schema" }
+sekonic-transport = { path = "../sekonic-transport" }
+bytes.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+sekonic-sim = { path = "../sekonic-sim" }

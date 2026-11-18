@@ -1,0 +1,33 @@
+name: Build & Release Sekonic Studio
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test-workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo test --workspace --release
+      - run: cargo check -p sekonic-schema -p sekonic-transport -p sekonic-proto-omr -p sekonic-proto-cis -p sekonic-grader --target wasm32-unknown-unknown
+
+  build-desktop:
+    needs: test-workspace
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm --prefix packages/sekonic-web-sdk install && npm --prefix packages/sekonic-web-sdk run build
+      - run: npm --prefix apps/sekonic-bridge install && npm --prefix apps/sekonic-bridge run build
+      - run: cargo build --release --manifest-path apps/sekonic-bridge/src-tauri/Cargo.toml
