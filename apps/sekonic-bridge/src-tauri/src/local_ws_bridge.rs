@@ -19,11 +19,17 @@ pub async fn run_local_ws_bridge(mut tx_rx: broadcast::Receiver<String>) {
         tokio::spawn(async move {
             let callback = |req: &Request, resp: Response| -> Result<Response, ErrorResponse> {
                 if let Some(origin) = req.headers().get("Origin").and_then(|v| v.to_str().ok()) {
-                    let allowed = origin.starts_with("http://localhost")
-                        || origin.starts_with("https://localhost")
-                        || origin.starts_with("http://127.0.0.1")
-                        || origin.starts_with("tauri://")
-                        || origin.starts_with("https://");
+                    let allowed = origin == "https://sekonic.dijios.com"
+                        || origin.starts_with("https://sekonic.dijios.com:")
+                        || origin == "http://localhost"
+                        || origin.starts_with("http://localhost:")
+                        || origin == "https://localhost"
+                        || origin.starts_with("https://localhost:")
+                        || origin == "http://127.0.0.1"
+                        || origin.starts_with("http://127.0.0.1:")
+                        || origin == "https://127.0.0.1"
+                        || origin.starts_with("https://127.0.0.1:")
+                        || origin.starts_with("tauri://");
                     if !allowed {
                         return Err(Response::builder()
                             .status(403)
