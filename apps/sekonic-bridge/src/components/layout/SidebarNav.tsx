@@ -87,7 +87,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
           <span>{theme === 'dark' ? 'Açık Tema' : 'Koyu Tema'}</span>
         </button>
         <div style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', paddingLeft: 6 }}>
-          v0.1.7 • Köprü: :17441
+          v0.1.8 • Köprü: :17441
         </div>
       </div>
     </aside>

@@ -19,7 +19,7 @@ if errorlevel 1 (
 echo       Version updated: %VER_CHANGE%
 echo.
 
-echo [2/4] Building packages\sekonic-web-sdk...
+echo [2/5] Building packages\sekonic-web-sdk...
 pushd packages\sekonic-web-sdk
 call npm run build
 if errorlevel 1 (
@@ -30,7 +30,17 @@ if errorlevel 1 (
 popd
 echo.
 
-echo [3/4] Building apps\sekonic-bridge...
+echo [3/5] Building headless sekonic-agent.exe...
+cargo build --release -p sekonic-agent
+if errorlevel 1 (
+    echo [ERROR] sekonic-agent build failed!
+    exit /b 1
+)
+if not exist "apps\sekonic-bridge\public\downloads" mkdir "apps\sekonic-bridge\public\downloads"
+copy /Y "target\release\sekonic-agent.exe" "apps\sekonic-bridge\public\downloads\sekonic-agent.exe" >nul
+echo.
+
+echo [4/5] Building apps\sekonic-bridge...
 pushd apps\sekonic-bridge
 call npm run build
 if errorlevel 1 (
@@ -41,7 +51,7 @@ if errorlevel 1 (
 popd
 echo.
 
-echo [4/4] Deploying dist to truncgil_ubuntu (https://sekonic.dijios.com/)...
+echo [5/5] Deploying dist to truncgil_ubuntu (https://sekonic.dijios.com/)...
 set "REMOTE_DIR=/home/truncgil/web/sekonic.dijios.com/public_html"
 tar -czf - -C apps\sekonic-bridge\dist . | ssh truncgil_ubuntu "mkdir -p %REMOTE_DIR% && find %REMOTE_DIR% -mindepth 1 -delete && tar -xzf - -C %REMOTE_DIR% && chown -R truncgil:www-data %REMOTE_DIR%"
 if errorlevel 1 (

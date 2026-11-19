@@ -23,6 +23,7 @@ target/
 **/*.rs.bk
 pkg/
 apps/sekonic-bridge/src-tauri/gen/schemas/
+apps/sekonic-bridge/public/downloads/*.exe
 
 # Node.js / TypeScript / Vite
 node_modules/
