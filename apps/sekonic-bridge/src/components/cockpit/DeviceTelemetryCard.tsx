@@ -1,5 +1,6 @@
 import React from 'react';
-import { Cpu, Gauge, RefreshCw } from 'lucide-react';
+import { Cpu, Download, Gauge, RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { AgentInfo } from '../../services/localAgentClient';
 
 export interface PortOption {
   id: string;
@@ -20,6 +21,8 @@ interface DeviceTelemetryCardProps {
   onBaudRateChange: (b: number) => void;
   onRefreshPorts: () => void;
   errorMsg: string | null;
+  agentInfo: AgentInfo;
+  onReconnectAgent: () => void;
 }
 
 export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
@@ -35,7 +38,11 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
   onBaudRateChange,
   onRefreshPorts,
   errorMsg,
+  agentInfo,
+  onReconnectAgent,
 }) => {
+  const isBrowserWithoutAgent = agentInfo.state === 'disconnected' || agentInfo.state === 'connecting';
+
   return (
     <div className="uxigl-glass-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -58,6 +65,81 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
 
       {!simulatorMode && (
         <div className="uxigl-subcard" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>
+          {agentInfo.state === 'connected' && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 11,
+                color: '#10b981',
+                background: 'rgba(16, 185, 129, 0.12)',
+                padding: '5px 8px',
+                borderRadius: 6,
+                fontWeight: 600,
+              }}
+            >
+              <ShieldCheck size={13} />
+              <span>Yerel Ajan Bağlı {agentInfo.version ? `(v${agentInfo.version})` : ''}</span>
+            </div>
+          )}
+
+          {isBrowserWithoutAgent && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                fontSize: 11,
+                color: '#b45309',
+                background: 'rgba(245, 158, 11, 0.14)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                padding: '8px 9px',
+                borderRadius: 6,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                <AlertTriangle size={13} />
+                <span>
+                  {agentInfo.state === 'connecting'
+                    ? 'Yerel Ajan aranıyor...'
+                    : 'Sekonic Yerel Ajanı çalışmıyor'}
+                </span>
+              </div>
+              <div style={{ lineHeight: 1.4, opacity: 0.9 }}>
+                Windows 7/8.1/10/11 üzerinden COM/USB Sekonic cihazına bağlanmak için yerel ajanı çalıştırın.
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                <a
+                  href="/downloads/sekonic-agent.exe"
+                  download="sekonic-agent.exe"
+                  className="uxigl-btn"
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: 11,
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    flex: 1,
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Download size={12} />
+                  <span>Ajanı İndir (.exe)</span>
+                </a>
+                <button
+                  type="button"
+                  className="uxigl-btn"
+                  style={{ padding: '4px 8px', fontSize: 11 }}
+                  onClick={onReconnectAgent}
+                >
+                  Tekrar Dene
+                </button>
+              </div>
+            </div>
+          )}
+
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: 'var(--uxigl-text-muted)' }}>
             <span>Gerçek COM / USB Aygıtı</span>
             <button

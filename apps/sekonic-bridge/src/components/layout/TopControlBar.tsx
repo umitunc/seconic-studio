@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Square, Wifi, Usb, Download, ChevronDown, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
+import { Play, Square, Wifi, WifiOff, Usb, Download, ChevronDown, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
 import { NavTab } from './SidebarNav';
 import { ExportFormat } from '../../utils/exportScans';
+import { AgentInfo } from '../../services/localAgentClient';
 
 interface TopControlBarProps {
   activeTab: NavTab;
@@ -9,6 +10,7 @@ interface TopControlBarProps {
   simulatorMode: boolean;
   selectedPort: string;
   rowCount: number;
+  agentInfo: AgentInfo;
   onStart: () => void;
   onStop: () => void;
   onExport: (format: ExportFormat) => void;
@@ -27,6 +29,7 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   simulatorMode,
   selectedPort,
   rowCount,
+  agentInfo,
   onStart,
   onStop,
   onExport,
@@ -72,9 +75,27 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
               ? selectedPort.replace('serial:', 'COM: ').replace('usb:', 'USB: ')
               : 'Port Seçilmedi'}
         </span>
-        <span className="uxigl-pill">
-          <Wifi size={13} />
-          Ölçme App Hazır
+        <span
+          className="uxigl-pill"
+          style={{
+            color:
+              agentInfo.state === 'connected' || agentInfo.state === 'tauri'
+                ? '#10b981'
+                : '#d97706',
+          }}
+        >
+          {agentInfo.state === 'connected' || agentInfo.state === 'tauri' ? (
+            <Wifi size={13} />
+          ) : (
+            <WifiOff size={13} />
+          )}
+          {agentInfo.state === 'tauri'
+            ? 'Masaüstü Köprü Hazır'
+            : agentInfo.state === 'connected'
+              ? `Yerel Ajan Hazır${agentInfo.version ? ` v${agentInfo.version}` : ''}`
+              : agentInfo.state === 'connecting'
+                ? 'Ajan Aranıyor...'
+                : 'Yerel Ajan Gerekli'}
         </span>
       </div>
 

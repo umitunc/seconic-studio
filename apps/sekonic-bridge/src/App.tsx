@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SidebarNav, NavTab } from './components/layout/SidebarNav';
 import { TopControlBar } from './components/layout/TopControlBar';
 import { exportScannedRows } from './utils/exportScans';
@@ -13,7 +13,27 @@ import { FormDesignerView } from './components/designer/FormDesignerView';
 import { ScanHistoryView } from './components/history/ScanHistoryView';
 import { SettingsView, HardwareSettings } from './components/settings/SettingsView';
 import { createSimulatedRow } from './services/bridgeClient';
+import { AgentInfo, LocalAgentClient, RawGradedSheet } from './services/localAgentClient';
 import { ScannedRow, ThresholdPolicy } from './types/scanner';
+
+function mapRawSheetToRow(parsed: RawGradedSheet): ScannedRow {
+  return {
+    id: parsed.seq_no,
+    seqNo: parsed.seq_no,
+    studentId: parsed.decoded_fields?.student_id || '????????',
+    studentName: parsed.missing_required_field ? 'Tanımsız' : 'Okundu',
+    booklet: parsed.decoded_fields?.kitapcik || 'A',
+    stacker: parsed.missing_required_field ? 'sub' : 'main',
+    confidence: parsed.needs_operator_review ? 72 : 98,
+    status: parsed.missing_required_field
+      ? 'Kayıtsız'
+      : (parsed.warnings?.length ?? 0) > 0
+        ? 'Silgi Kurtarıldı'
+        : 'Tamam',
+    answersSummary: Object.values(parsed.answers ?? {}).join(' '),
+    rawMatrixB64: parsed.raw_matrix_b64 ?? '',
+  };
+}
 
 type TauriInternals = {
   invoke: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
@@ -79,6 +99,10 @@ export const App: React.FC = () => {
   const [selectedPort, setSelectedPort] = useState('');
   const [baudRate, setBaudRate] = useState(38400);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [agentInfo, setAgentInfo] = useState<AgentInfo>(() => ({
+    state: getTauriInvoke() ? 'tauri' : 'connecting',
+  }));
+  const agentRef = useRef<LocalAgentClient | null>(null);
   const [rows, setRows] = useState<ScannedRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<ScannedRow | null>(null);
   const [showRightPanel, setShowRightPanel] = useState(false);
@@ -119,21 +143,77 @@ export const App: React.FC = () => {
 
   const refreshPorts = useCallback(async () => {
     const invoke = getTauriInvoke();
-    if (!invoke) return;
-    try {
-      const list = await invoke<PortOption[]>('list_available_ports');
-      setPorts(list);
-      if (list.length > 0 && !selectedPort) {
-        setSelectedPort(list[0].id);
+    if (invoke) {
+      try {
+        const list = await invoke<PortOption[]>('list_available_ports');
+        setPorts(list);
+        if (list.length > 0 && !selectedPort) {
+          setSelectedPort(list[0].id);
+        }
+      } catch (e) {
+        setErrorMsg(String(e));
       }
-    } catch (e) {
-      setErrorMsg(String(e));
+      return;
+    }
+
+    const agent = agentRef.current;
+    if (agent && agent.isConnected()) {
+      try {
+        const list = await agent.listPorts();
+        setPorts(list);
+        setSelectedPort((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id ?? ''));
+        setErrorMsg(null);
+      } catch (e) {
+        setErrorMsg(String(e));
+      }
+    } else if (agent) {
+      agent.reconnectNow();
     }
   }, [selectedPort]);
 
   useEffect(() => {
-    void refreshPorts();
-  }, [refreshPorts]);
+    if (getTauriInvoke()) {
+      void refreshPorts();
+      return;
+    }
+
+    const client = new LocalAgentClient({
+      onStatusChange: (info) => {
+        setAgentInfo(info);
+        if (info.state === 'connected') {
+          void client.listPorts().then((list) => {
+            setPorts(list);
+            setSelectedPort((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id ?? ''));
+            setErrorMsg(null);
+          }).catch(() => {});
+        } else if (info.state === 'disconnected') {
+          setPorts([]);
+        }
+      },
+      onSheetScanned: (parsed) => {
+        const row = mapRawSheetToRow(parsed);
+        setRows((prev) => [row, ...prev]);
+        setSelectedRow((cur) => cur ?? row);
+      },
+      onScannerError: (msg) => {
+        setErrorMsg(msg);
+        setScanning(false);
+      },
+      onScannerStatus: (isScanning) => {
+        setScanning(isScanning);
+      },
+      onHopperEmpty: () => {
+        setScanning(false);
+      },
+    });
+    agentRef.current = client;
+    client.connect();
+
+    return () => {
+      client.dispose();
+      agentRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const w = window as unknown as {
@@ -145,31 +225,8 @@ export const App: React.FC = () => {
     if (w.__TAURI__?.event) {
       w.__TAURI__.event.listen('sheet:scanned', (e) => {
         try {
-          const parsed = JSON.parse(String(e.payload)) as {
-            seq_no: number;
-            decoded_fields?: Record<string, string>;
-            answers?: Record<string, string>;
-            missing_required_field?: boolean;
-            needs_operator_review?: boolean;
-            warnings?: string[];
-            raw_matrix_b64?: string;
-          };
-          const row: ScannedRow = {
-            id: parsed.seq_no,
-            seqNo: parsed.seq_no,
-            studentId: parsed.decoded_fields?.student_id || '????????',
-            studentName: parsed.missing_required_field ? 'Tanımsız' : 'Okundu',
-            booklet: parsed.decoded_fields?.kitapcik || 'A',
-            stacker: parsed.missing_required_field ? 'sub' : 'main',
-            confidence: parsed.needs_operator_review ? 72 : 98,
-            status: parsed.missing_required_field
-              ? 'Kayıtsız'
-              : (parsed.warnings?.length ?? 0) > 0
-                ? 'Silgi Kurtarıldı'
-                : 'Tamam',
-            answersSummary: Object.values(parsed.answers ?? {}).join(' '),
-            rawMatrixB64: parsed.raw_matrix_b64 ?? '',
-          };
+          const parsed = JSON.parse(String(e.payload)) as RawGradedSheet;
+          const row = mapRawSheetToRow(parsed);
           setRows((prev) => [row, ...prev]);
           setSelectedRow((cur) => cur ?? row);
         } catch {
@@ -194,7 +251,8 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!scanning || getTauriInvoke() || !simulatorMode) return;
+    const hasNativeBackend = Boolean(getTauriInvoke()) || Boolean(agentRef.current?.isConnected());
+    if (!scanning || hasNativeBackend || !simulatorMode) return;
     const timer = setInterval(() => {
       setRows((prev) => {
         const nextSeq = prev.length + 1;
@@ -219,20 +277,30 @@ export const App: React.FC = () => {
       } catch (e) {
         setErrorMsg(String(e));
       }
-    } else if (!simulatorMode) {
-      const nav = navigator as unknown as { serial?: { requestPort: () => Promise<unknown> } };
-      if (nav.serial) {
-        try {
-          await nav.serial.requestPort();
-          setScanning(true);
-        } catch (e) {
-          setErrorMsg(`WebSerial seçilmedi: ${String(e)}`);
-        }
-      } else {
-        setErrorMsg('Gerçek COM port için Ayarlar -> Bağlantı veya Tauri masaüstü penceresini kullanın.');
+      return;
+    }
+
+    const agent = agentRef.current;
+    if (agent && agent.isConnected()) {
+      try {
+        await agent.startScan({
+          portId: selectedPort,
+          baudRate,
+          simulatorMode,
+        });
+        setScanning(true);
+      } catch (e) {
+        setErrorMsg(e instanceof Error ? e.message : String(e));
       }
-    } else {
+      return;
+    }
+
+    if (simulatorMode) {
       setScanning(true);
+    } else {
+      setErrorMsg(
+        'Gerçek COM/USB tarayıcıya bağlanmak için Sekonic Yerel Ajanını (sekonic-agent.exe) indirip çalıştırın.',
+      );
     }
   };
 
@@ -240,6 +308,8 @@ export const App: React.FC = () => {
     const invoke = getTauriInvoke();
     if (invoke) {
       await invoke('stop_scan');
+    } else if (agentRef.current?.isConnected()) {
+      await agentRef.current.stopScan().catch(() => {});
     }
     setScanning(false);
   };
@@ -311,6 +381,7 @@ export const App: React.FC = () => {
           simulatorMode={simulatorMode}
           selectedPort={selectedPort}
           rowCount={rows.length}
+          agentInfo={agentInfo}
           onStart={() => void handleStart()}
           onStop={() => void handleStop()}
           onExport={(format) => exportScannedRows(rows, format)}
@@ -332,6 +403,8 @@ export const App: React.FC = () => {
                 onBaudRateChange={setBaudRate}
                 onRefreshPorts={() => void refreshPorts()}
                 errorMsg={errorMsg}
+                agentInfo={agentInfo}
+                onReconnectAgent={() => agentRef.current?.reconnectNow()}
               />
               <SheetCanvasPreview
                 row={selectedRow}
