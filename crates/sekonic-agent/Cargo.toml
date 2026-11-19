@@ -1,0 +1,19 @@
+[package]
+name = "sekonic-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Headless local WebSocket bridge agent for Sekonic OMR/CIS scanners (Windows 7/8.1/10/11, macOS, Linux)"
+
+[dependencies]
+sekonic-schema = { path = "../sekonic-schema" }
+sekonic-transport = { path = "../sekonic-transport" }
+sekonic-proto-omr = { path = "../sekonic-proto-omr" }
+sekonic-grader = { path = "../sekonic-grader" }
+sekonic-sim = { path = "../sekonic-sim" }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1.42", features = ["rt-multi-thread", "net", "sync", "time", "macros", "io-util", "signal"] }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+
