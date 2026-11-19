@@ -76,7 +76,7 @@ export const LiveScanGrid: React.FC<LiveScanGridProps> = ({
           showSearch: true,
           showClearFilters: true,
           showExportCsv: false,
-          showExportExcel: true,
+          showExportExcel: false,
         }}
         summaryRow={{ showTotalCount: true, showSelectionStats: false, showColumnSummaries: false }}
         onSelectionChanged={(_keys, selected) => {

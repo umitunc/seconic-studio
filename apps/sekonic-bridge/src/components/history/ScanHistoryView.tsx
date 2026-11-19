@@ -88,7 +88,7 @@ export const ScanHistoryView: React.FC<ScanHistoryViewProps> = ({ theme }) => {
             showSearch: true,
             showClearFilters: true,
             showExportCsv: false,
-            showExportExcel: true,
+            showExportExcel: false,
           }}
           summaryRow={{ showTotalCount: true, showSelectionStats: false, showColumnSummaries: false }}
         />

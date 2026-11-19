@@ -1,6 +1,6 @@
 {
   "name": "sekonic-bridge-ui",
-  "version": "0.1.2",
+  "version": "0.1.7",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,11 +9,12 @@
     "build": "tsc --noEmit && vite build"
   },
   "dependencies": {
+    "@kurum/sekonic-web-sdk": "file:../../packages/sekonic-web-sdk",
+    "lucide-react": "^0.475.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sheetgl": "^2.2.6",
-    "lucide-react": "^0.475.0",
-    "@kurum/sekonic-web-sdk": "file:../../packages/sekonic-web-sdk"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

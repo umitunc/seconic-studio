@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { SidebarNav, NavTab } from './components/layout/SidebarNav';
 import { TopControlBar } from './components/layout/TopControlBar';
+import { exportScannedRows } from './utils/exportScans';
 import { DeviceTelemetryCard, PortOption } from './components/cockpit/DeviceTelemetryCard';
 import { KpiStrip } from './components/cockpit/KpiStrip';
 import { LiveScanGrid } from './components/cockpit/LiveScanGrid';
@@ -309,8 +310,10 @@ export const App: React.FC = () => {
           scanning={scanning}
           simulatorMode={simulatorMode}
           selectedPort={selectedPort}
+          rowCount={rows.length}
           onStart={() => void handleStart()}
           onStop={() => void handleStop()}
+          onExport={(format) => exportScannedRows(rows, format)}
         />
 
         {activeTab === 'scan' && (

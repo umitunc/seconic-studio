@@ -6,7 +6,7 @@ cd /d "%~dp0"
 
 echo ==================================================
 echo  Sekonic Studio - Version Increment ^& Deploy
-echo  Target: https://seconic.dijios.com/
+echo  Target: https://sekonic.dijios.com/
 echo ==================================================
 echo.
 
@@ -41,8 +41,8 @@ if errorlevel 1 (
 popd
 echo.
 
-echo [4/4] Deploying dist to truncgil_ubuntu (https://seconic.dijios.com/)...
-set "REMOTE_DIR=/home/truncgil/web/seconic.dijios.com/public_html"
+echo [4/4] Deploying dist to truncgil_ubuntu (https://sekonic.dijios.com/)...
+set "REMOTE_DIR=/home/truncgil/web/sekonic.dijios.com/public_html"
 tar -czf - -C apps\sekonic-bridge\dist . | ssh truncgil_ubuntu "mkdir -p %REMOTE_DIR% && find %REMOTE_DIR% -mindepth 1 -delete && tar -xzf - -C %REMOTE_DIR% && chown -R truncgil:www-data %REMOTE_DIR%"
 if errorlevel 1 (
     echo [ERROR] Deployment over SSH failed!
@@ -52,6 +52,6 @@ if errorlevel 1 (
 echo.
 echo ==================================================
 echo  Deploy complete! (%VER_CHANGE%)
-echo  URL: https://seconic.dijios.com/
+echo  URL: https://sekonic.dijios.com/
 echo ==================================================
 endlocal
