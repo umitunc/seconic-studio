@@ -23,6 +23,52 @@ use tokio_tungstenite::tungstenite::Message;
 
 const DEFAULT_PORT: u16 = 17441;
 
+/// Windows 7 / 8 / 8.1 compatibility shim:
+/// Rust 1.78+ `std` imports `bcryptprimitives.dll!ProcessPrng` (Windows 10+ only).
+/// Providing a strong `__imp_` definition backed by `advapi32.dll!SystemFunction036` (`RtlGenRandom`)
+/// eliminates the `bcryptprimitives.dll` import completely so the binary runs on Windows 7 / 8.1 / 10 / 11.
+#[cfg(all(windows, target_env = "msvc"))]
+mod win7_compat {
+    use std::ffi::c_void;
+
+    #[link(name = "advapi32")]
+    extern "system" {
+        fn SystemFunction036(buf: *mut c_void, len: u32) -> u8;
+    }
+
+    pub unsafe extern "system" fn fallback_process_prng(mut data: *mut u8, mut len: usize) -> i32 {
+        while len > 0 {
+            let chunk = len.min(0x7FFF_FFFF) as u32;
+            if unsafe { SystemFunction036(data.cast(), chunk) } == 0 {
+                return 0;
+            }
+            data = unsafe { data.add(chunk as usize) };
+            len -= chunk as usize;
+        }
+        1
+    }
+}
+
+#[cfg(all(windows, target_env = "msvc", target_arch = "x86"))]
+std::arch::global_asm!(
+    ".section .rdata,\"dr\"",
+    ".globl __imp__ProcessPrng@8",
+    ".p2align 2",
+    "__imp__ProcessPrng@8:",
+    ".long {fn_sym}",
+    fn_sym = sym win7_compat::fallback_process_prng,
+);
+
+#[cfg(all(windows, target_env = "msvc", target_arch = "x86_64"))]
+std::arch::global_asm!(
+    ".section .rdata,\"dr\"",
+    ".globl __imp_ProcessPrng",
+    ".p2align 3",
+    "__imp_ProcessPrng:",
+    ".quad {fn_sym}",
+    fn_sym = sym win7_compat::fallback_process_prng,
+);
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PortOption {
     pub id: String,
@@ -46,6 +92,10 @@ enum ClientCommand {
         baud_rate: u32,
         #[serde(default)]
         simulator_mode: bool,
+        #[serde(default)]
+        enable_barcode: bool,
+        #[serde(default)]
+        schema: Option<OmrFormSchema>,
     },
     StopScan {
         req_id: Option<String>,
@@ -170,9 +220,20 @@ fn default_runtime_schema() -> OmrFormSchema {
 async fn run_driver_loop<T: ScannerTransport + 'static>(
     mut driver: OmrScannerDriver<T>,
     schema: OmrFormSchema,
+    enable_barcode: bool,
     state: Arc<AgentState>,
 ) {
-    if let Err(e) = driver.initialize(&schema, true).await {
+    println!(
+        "[sekonic-agent] Tarama baslatiliyor: form='{}' ({}x{}), barcode={}",
+        schema.form_name, schema.grid.front_rows, schema.grid.front_cols, enable_barcode
+    );
+    state.broadcast_json(serde_json::json!({
+        "type": "scanner:status",
+        "phase": "initializing",
+        "scanning": false
+    }));
+    if let Err(e) = driver.initialize(&schema, enable_barcode).await {
+        eprintln!("[sekonic-agent] initialize hatasi: {e}");
         state.scanning.store(false, Ordering::Relaxed);
         state.broadcast_json(serde_json::json!({
             "type": "scanner:error",
@@ -180,18 +241,25 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
         }));
         state.broadcast_json(serde_json::json!({
             "type": "scanner:status",
+            "phase": "idle",
             "scanning": false
         }));
         return;
     }
 
+    println!(
+        "[sekonic-agent] Cihaz hazir (model='{}'), kagit besleme bekleniyor...",
+        driver.model_name()
+    );
+
     state.broadcast_json(serde_json::json!({
         "type": "scanner:status",
+        "phase": "scanning",
         "scanning": true
     }));
 
     while state.scanning.load(Ordering::Relaxed) {
-        match driver.feed_and_read_sheet(&schema, true).await {
+        match driver.feed_and_read_sheet(&schema, enable_barcode).await {
             Ok(Some(cap)) => {
                 let graded = grade_sheet(&schema, &cap);
                 let target = if graded.missing_required_field {
@@ -206,6 +274,7 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
                 }));
             }
             Ok(None) => {
+                println!("[sekonic-agent] Hopper bos, tarama tamamlandi.");
                 state.scanning.store(false, Ordering::Relaxed);
                 state.broadcast_json(serde_json::json!({
                     "type": "scanner:hopper_empty"
@@ -217,6 +286,7 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
                 break;
             }
             Err(e) => {
+                eprintln!("[sekonic-agent] Okuma hatasi: {e}");
                 state.scanning.store(false, Ordering::Relaxed);
                 state.broadcast_json(serde_json::json!({
                     "type": "scanner:error",
@@ -230,6 +300,7 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
             }
         }
     }
+    driver.finish_scan().await;
 }
 
 fn start_scan(
@@ -237,16 +308,25 @@ fn start_scan(
     port_id: &str,
     baud_rate: u32,
     simulator_mode: bool,
+    enable_barcode: bool,
+    custom_schema: Option<OmrFormSchema>,
 ) -> Result<(), String> {
     if state.scanning.load(Ordering::Relaxed) {
         return Err("Tarama zaten aktif.".into());
     }
 
+    let schema = match custom_schema {
+        Some(s) => {
+            s.validate().map_err(|e| format!("Geçersiz form şeması: {e}"))?;
+            s
+        }
+        None => default_runtime_schema(),
+    };
+
     state.simulator_mode.store(simulator_mode, Ordering::Relaxed);
     state.scanning.store(true, Ordering::Relaxed);
 
     let st = state.clone();
-    let schema = default_runtime_schema();
 
     if simulator_mode {
         let sheets: Vec<_> = (1..=50u64)
@@ -264,7 +344,7 @@ fn start_scan(
         let (host_tx, dev_rx) = InMemoryTransport::pair(16);
         tokio::spawn(VirtualSr6500::new(sheets).run(dev_rx));
         let driver = OmrScannerDriver::new(host_tx);
-        tokio::spawn(run_driver_loop(driver, schema, st));
+        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
         return Ok(());
     }
 
@@ -274,7 +354,7 @@ fn start_scan(
             format!("Seri port ({com_port}) açılamadı: {e}")
         })?;
         let driver = OmrScannerDriver::new(transport);
-        tokio::spawn(run_driver_loop(driver, schema, st));
+        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
         return Ok(());
     }
 
@@ -288,7 +368,7 @@ fn start_scan(
             format!("USB aygıtı (0x{pid:04X}) açılamadı: {e}")
         })?;
         let driver = OmrScannerDriver::new(transport);
-        tokio::spawn(run_driver_loop(driver, schema, st));
+        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
         return Ok(());
     }
 
@@ -362,8 +442,15 @@ async fn handle_client(stream: tokio::net::TcpStream, state: Arc<AgentState>) {
                                     "ports": ports,
                                 })
                             }
-                            Ok(ClientCommand::StartScan { req_id, port_id, baud_rate, simulator_mode }) => {
-                                match start_scan(&state, &port_id, baud_rate, simulator_mode) {
+                            Ok(ClientCommand::StartScan {
+                                req_id,
+                                port_id,
+                                baud_rate,
+                                simulator_mode,
+                                enable_barcode,
+                                schema,
+                            }) => {
+                                match start_scan(&state, &port_id, baud_rate, simulator_mode, enable_barcode, schema) {
                                     Ok(()) => serde_json::json!({
                                         "type": "scan_started",
                                         "req_id": req_id,

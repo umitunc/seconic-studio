@@ -1,6 +1,7 @@
 import { PortOption } from '../components/cockpit/DeviceTelemetryCard';
 
 export type AgentConnectionState = 'tauri' | 'connected' | 'connecting' | 'disconnected';
+export type ScanPhase = 'idle' | 'initializing' | 'scanning';
 
 export interface AgentInfo {
   state: AgentConnectionState;
@@ -28,19 +29,21 @@ export interface LocalAgentHandlers {
   onStatusChange?: (info: AgentInfo) => void;
   onSheetScanned?: (sheet: RawGradedSheet) => void;
   onScannerError?: (message: string) => void;
-  onScannerStatus?: (scanning: boolean) => void;
+  onScannerStatus?: (scanning: boolean, phase?: ScanPhase) => void;
   onHopperEmpty?: () => void;
 }
 
 const DEFAULT_WS_URL = 'ws://127.0.0.1:17441';
-const RECONNECT_MS = 3500;
-const REQUEST_TIMEOUT_MS = 5000;
+const INITIAL_RECONNECT_MS = 3500;
+const MAX_RECONNECT_MS = 30000;
+const REQUEST_TIMEOUT_MS = 8000;
 
 export class LocalAgentClient {
   private ws: WebSocket | null = null;
   private url: string;
   private handlers: LocalAgentHandlers;
   private reconnectTimer: number | null = null;
+  private reconnectDelayMs = INITIAL_RECONNECT_MS;
   private disposed = false;
   private reqCounter = 0;
   private pending = new Map<string, PendingReq>();
@@ -73,6 +76,7 @@ export class LocalAgentClient {
 
       socket.onopen = () => {
         if (this.ws !== socket) return;
+        this.reconnectDelayMs = INITIAL_RECONNECT_MS;
         this.updateInfo({ state: 'connected', version: this.info.version, platform: this.info.platform });
       };
 
@@ -99,6 +103,7 @@ export class LocalAgentClient {
   }
 
   public reconnectNow(): void {
+    this.reconnectDelayMs = INITIAL_RECONNECT_MS;
     this.clearReconnectTimer();
     if (this.ws) {
       try {
@@ -131,12 +136,20 @@ export class LocalAgentClient {
     return ports;
   }
 
-  public async startScan(opts: { portId: string; baudRate: number; simulatorMode: boolean }): Promise<void> {
+  public async startScan(opts: {
+    portId: string;
+    baudRate: number;
+    simulatorMode: boolean;
+    enableBarcode?: boolean;
+    schema?: Record<string, unknown>;
+  }): Promise<void> {
     await this.sendRequest({
       type: 'start_scan',
       port_id: opts.portId,
       baud_rate: opts.baudRate,
       simulator_mode: opts.simulatorMode,
+      enable_barcode: Boolean(opts.enableBarcode),
+      schema: opts.schema ?? null,
     });
   }
 
@@ -207,11 +220,16 @@ export class LocalAgentClient {
       case 'scanner:error':
         this.handlers.onScannerError?.(String(msg.message ?? 'Tarayıcı hatası'));
         break;
-      case 'scanner:status':
-        if (typeof msg.scanning === 'boolean') {
-          this.handlers.onScannerStatus?.(msg.scanning);
+      case 'scanner:status': {
+        const phase =
+          msg.phase === 'initializing' || msg.phase === 'scanning' || msg.phase === 'idle'
+            ? (msg.phase as ScanPhase)
+            : undefined;
+        if (typeof msg.scanning === 'boolean' || phase) {
+          this.handlers.onScannerStatus?.(Boolean(msg.scanning), phase);
         }
         break;
+      }
       case 'scanner:hopper_empty':
         this.handlers.onHopperEmpty?.();
         break;
@@ -232,10 +250,12 @@ export class LocalAgentClient {
 
   private scheduleReconnect(): void {
     if (this.disposed || this.reconnectTimer !== null) return;
+    const delay = this.reconnectDelayMs;
+    this.reconnectDelayMs = Math.min(MAX_RECONNECT_MS, Math.round(this.reconnectDelayMs * 2));
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       this.connect();
-    }, RECONNECT_MS);
+    }, delay);
   }
 
   private clearReconnectTimer(): void {
