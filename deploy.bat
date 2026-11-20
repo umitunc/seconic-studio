@@ -30,14 +30,17 @@ if errorlevel 1 (
 popd
 echo.
 
-echo [3/5] Building headless sekonic-agent.exe...
-cargo build --release -p sekonic-agent
-if errorlevel 1 (
+echo [3/5] Building universal 32-bit Windows 7/8.1/10/11 sekonic-agent.exe...
+set "RUSTFLAGS=-C target-feature=+crt-static"
+cargo build --release --target i686-pc-windows-msvc -p sekonic-agent
+set "AGENT_ERR=!errorlevel!"
+set "RUSTFLAGS="
+if not "!AGENT_ERR!"=="0" (
     echo [ERROR] sekonic-agent build failed!
     exit /b 1
 )
 if not exist "apps\sekonic-bridge\public\downloads" mkdir "apps\sekonic-bridge\public\downloads"
-copy /Y "target\release\sekonic-agent.exe" "apps\sekonic-bridge\public\downloads\sekonic-agent.exe" >nul
+copy /Y "target\i686-pc-windows-msvc\release\sekonic-agent.exe" "apps\sekonic-bridge\public\downloads\sekonic-agent.exe" >nul
 echo.
 
 echo [4/5] Building apps\sekonic-bridge...
