@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScanLine, History, FileSpreadsheet, Settings, Sun, Moon } from 'lucide-react';
+import { ScanLine, History, FileSpreadsheet, Settings } from 'lucide-react';
 import { SekonicStudioLogo } from './SekonicLogo';
 
 export type NavTab = 'scan' | 'history' | 'forms' | 'settings';
@@ -7,8 +7,6 @@ export type NavTab = 'scan' | 'history' | 'forms' | 'settings';
 interface SidebarNavProps {
   activeTab: NavTab;
   onSelectTab: (tab: NavTab) => void;
-  theme: 'light' | 'dark';
-  onToggleTheme: () => void;
   width?: number;
 }
 
@@ -22,8 +20,6 @@ const NAV_ITEMS: Array<{ id: NavTab; label: string; icon: React.ReactNode }> = [
 export const SidebarNav: React.FC<SidebarNavProps> = ({
   activeTab,
   onSelectTab,
-  theme,
-  onToggleTheme,
   width = 220,
 }) => {
   return (
@@ -77,18 +73,8 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
         </nav>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <button
-          className="uxigl-btn"
-          onClick={onToggleTheme}
-          style={{ width: '100%', justifyContent: 'flex-start' }}
-        >
-          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-          <span>{theme === 'dark' ? 'Açık Tema' : 'Koyu Tema'}</span>
-        </button>
-        <div style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', paddingLeft: 6 }}>
-          v0.1.8 • Köprü: :17441
-        </div>
+      <div style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', paddingLeft: 6 }}>
+        v0.2.4 • Köprü: :17441
       </div>
     </aside>
   );

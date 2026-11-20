@@ -1,6 +1,7 @@
-import React from 'react';
-import { Cpu, Download, Gauge, RefreshCw, ShieldCheck, AlertTriangle } from 'lucide-react';
-import { AgentInfo } from '../../services/localAgentClient';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Cpu, Download, FileText, Gauge, RefreshCw, ShieldCheck, AlertTriangle, Upload, Search, ChevronDown, Check, X, Loader2 } from 'lucide-react';
+import { AgentInfo, ScanPhase } from '../../services/localAgentClient';
+import { FormTemplate } from '../../utils/formTemplates';
 
 export interface PortOption {
   id: string;
@@ -10,6 +11,7 @@ export interface PortOption {
 
 interface DeviceTelemetryCardProps {
   scanning: boolean;
+  scanPhase: ScanPhase;
   simulatorMode: boolean;
   onToggleSimulator: (v: boolean) => void;
   dropoutLed: string;
@@ -23,10 +25,16 @@ interface DeviceTelemetryCardProps {
   errorMsg: string | null;
   agentInfo: AgentInfo;
   onReconnectAgent: () => void;
+  templates: FormTemplate[];
+  activeTemplateId: string;
+  onSelectTemplate: (id: string) => void;
+  onImportFmtFile: (file: File) => void;
+  onOpenDesigner: () => void;
 }
 
 export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
   scanning,
+  scanPhase,
   simulatorMode,
   onToggleSimulator,
   dropoutLed,
@@ -40,18 +48,317 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
   errorMsg,
   agentInfo,
   onReconnectAgent,
+  templates,
+  activeTemplateId,
+  onSelectTemplate,
+  onImportFmtFile,
+  onOpenDesigner,
 }) => {
+  const fmtInputRef = useRef<HTMLInputElement | null>(null);
+  const comboRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const isBrowserWithoutAgent = agentInfo.state === 'disconnected' || agentInfo.state === 'connecting';
+  const activeTemplate = templates.find((t) => t.id === activeTemplateId) ?? templates[0];
+
+  const [tplOpen, setTplOpen] = useState(false);
+  const [tplQuery, setTplQuery] = useState('');
+  const [highlightIdx, setHighlightIdx] = useState(0);
+
+  const filteredTemplates = useMemo(() => {
+    const q = tplQuery.trim().toLocaleLowerCase('tr-TR');
+    if (!q) return templates;
+    return templates.filter((t) => {
+      const hay = `${t.name} ${t.rows}x${t.cols} ${t.rows}×${t.cols}`.toLocaleLowerCase('tr-TR');
+      return hay.includes(q);
+    });
+  }, [templates, tplQuery]);
+
+  useEffect(() => {
+    setHighlightIdx(0);
+  }, [tplQuery, tplOpen]);
+
+  useEffect(() => {
+    const onOutside = (e: MouseEvent) => {
+      if (comboRef.current && !comboRef.current.contains(e.target as Node)) {
+        setTplOpen(false);
+        setTplQuery('');
+      }
+    };
+    document.addEventListener('mousedown', onOutside);
+    return () => document.removeEventListener('mousedown', onOutside);
+  }, []);
+
+  const commitTemplate = (id: string) => {
+    onSelectTemplate(id);
+    setTplOpen(false);
+    setTplQuery('');
+    inputRef.current?.blur();
+  };
 
   return (
     <div className="uxigl-glass-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span style={{ fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Cpu size={15} color="#38bdf8" /> Cihaz & Port Bağlantısı
+          <Cpu size={15} color="#38bdf8" /> Cihaz & Form Bağlantısı
         </span>
-        <span style={{ fontSize: 12, color: scanning ? '#34d399' : '#94a3b8' }}>
-          {scanning ? '● Aktif' : '○ Beklemede'}
+        <span
+          style={{
+            fontSize: 12,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            color:
+              scanPhase === 'initializing'
+                ? '#f59e0b'
+                : scanning
+                  ? '#34d399'
+                  : '#94a3b8',
+            fontWeight: scanPhase === 'initializing' ? 600 : 400,
+          }}
+        >
+          {scanPhase === 'initializing' ? (
+            <>
+              <Loader2 size={12} className="uxigl-spin" /> Hazırlanıyor...
+            </>
+          ) : scanning ? (
+            '● Aktif'
+          ) : (
+            '○ Beklemede'
+          )}
         </span>
+      </div>
+
+      {/* Optik Form Şablonu Seçimi */}
+      <div className="uxigl-subcard" style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: 'var(--uxigl-text-muted)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+            <FileText size={12} color="#38bdf8" /> Optik Form Şablonu
+          </span>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input
+              ref={fmtInputRef}
+              type="file"
+              accept=".fmt,.bldm,.txt"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onImportFmtFile(f);
+                e.target.value = '';
+              }}
+            />
+            <button
+              type="button"
+              className="uxigl-btn"
+              style={{ padding: '2px 6px', fontSize: 11 }}
+              onClick={() => fmtInputRef.current?.click()}
+              title="Yeni .fmt veya .bldm şablonu yükle"
+            >
+              <Upload size={11} /> .fmt
+            </button>
+            <button
+              type="button"
+              className="uxigl-btn"
+              style={{ padding: '2px 6px', fontSize: 11 }}
+              onClick={onOpenDesigner}
+              title="Form Tasarımcısında düzenle"
+            >
+              Düzenle
+            </button>
+          </div>
+        </div>
+        <div ref={comboRef} style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <Search
+              size={12}
+              style={{
+                position: 'absolute',
+                left: 9,
+                color: 'var(--uxigl-text-muted)',
+                pointerEvents: 'none',
+              }}
+            />
+            <input
+              ref={inputRef}
+              type="text"
+              className="uxigl-select"
+              disabled={scanning}
+              value={tplOpen ? tplQuery : activeTemplate?.name ?? ''}
+              placeholder={activeTemplate ? activeTemplate.name : 'Optik form ara veya seç...'}
+              onFocus={() => {
+                if (scanning) return;
+                setTplOpen(true);
+                setTplQuery('');
+              }}
+              onChange={(e) => {
+                setTplQuery(e.target.value);
+                if (!tplOpen) setTplOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (!tplOpen) {
+                  if (e.key === 'ArrowDown' || e.key === 'Enter') {
+                    e.preventDefault();
+                    setTplOpen(true);
+                  }
+                  return;
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setHighlightIdx((i) => Math.min(filteredTemplates.length - 1, i + 1));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setHighlightIdx((i) => Math.max(0, i - 1));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const target = filteredTemplates[highlightIdx];
+                  if (target) commitTemplate(target.id);
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setTplOpen(false);
+                  setTplQuery('');
+                  inputRef.current?.blur();
+                }
+              }}
+              style={{
+                width: '100%',
+                paddingLeft: 26,
+                paddingRight: 26,
+                textOverflow: 'ellipsis',
+              }}
+            />
+            {tplOpen && tplQuery ? (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setTplQuery('')}
+                title="Temizle"
+                style={{
+                  position: 'absolute',
+                  right: 6,
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--uxigl-text-muted)',
+                  cursor: 'pointer',
+                  padding: 2,
+                  display: 'flex',
+                }}
+              >
+                <X size={12} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={scanning}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (scanning) return;
+                  setTplOpen((o) => {
+                    const next = !o;
+                    if (next) {
+                      setTplQuery('');
+                      setTimeout(() => inputRef.current?.focus(), 0);
+                    }
+                    return next;
+                  });
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 6,
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--uxigl-text-muted)',
+                  cursor: scanning ? 'default' : 'pointer',
+                  padding: 2,
+                  display: 'flex',
+                }}
+              >
+                <ChevronDown size={13} />
+              </button>
+            )}
+          </div>
+
+          {tplOpen && !scanning && (
+            <div
+              className="uxigl-glass-card"
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 4px)',
+                left: 0,
+                right: 0,
+                maxHeight: 230,
+                overflowY: 'auto',
+                zIndex: 60,
+                padding: 4,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                boxShadow: '0 12px 28px rgba(0, 0, 0, 0.28)',
+                background: 'var(--uxigl-surface, #ffffff)',
+              }}
+            >
+              {filteredTemplates.length === 0 ? (
+                <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--uxigl-text-muted)', textAlign: 'center' }}>
+                  Eşleşen şablon bulunamadı
+                </div>
+              ) : (
+                filteredTemplates.map((t, idx) => {
+                  const isSelected = t.id === activeTemplate?.id;
+                  const isHighlighted = idx === highlightIdx;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setHighlightIdx(idx)}
+                      onClick={() => commitTemplate(t.id)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-start',
+                        gap: 2,
+                        width: '100%',
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        background: isHighlighted
+                          ? 'rgba(56, 189, 248, 0.16)'
+                          : isSelected
+                            ? 'rgba(56, 189, 248, 0.08)'
+                            : 'transparent',
+                        color: 'inherit',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 6 }}>
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: isSelected ? 600 : 500,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {t.name}
+                        </span>
+                        {isSelected && <Check size={12} color="#38bdf8" style={{ flexShrink: 0 }} />}
+                      </div>
+                      <span style={{ fontSize: 10, color: 'var(--uxigl-text-muted)' }}>
+                        {t.rows}×{t.cols} · {t.fields.length} alan
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+        {activeTemplate && (
+          <div style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+            <span>Izgara: {activeTemplate.rows} satır × {activeTemplate.cols} sütun</span>
+            <span>{activeTemplate.fields.length} alan</span>
+          </div>
+        )}
       </div>
 
       <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, cursor: 'pointer' }}>
@@ -111,7 +418,7 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
               </div>
               <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
                 <a
-                  href="/downloads/sekonic-agent.exe"
+                  href={`/downloads/sekonic-agent.exe?t=${Date.now()}`}
                   download="sekonic-agent.exe"
                   className="uxigl-btn"
                   style={{
@@ -168,10 +475,11 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
           </select>
 
           {selectedPort.startsWith('serial:') && (
-            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+            <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, gap: 8 }}>
               <span style={{ color: 'var(--uxigl-text-muted)' }}>Baud Rate</span>
               <select
                 className="uxigl-select"
+                style={{ width: 130 }}
                 value={baudRate}
                 onChange={(e) => onBaudRateChange(Number(e.target.value))}
               >
@@ -203,10 +511,11 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
         </div>
       </div>
 
-      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+      <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, gap: 8 }}>
         <span style={{ color: 'var(--uxigl-text-muted)' }}>Dropout LED Rengi</span>
         <select
           className="uxigl-select"
+          style={{ width: 130 }}
           value={dropoutLed}
           onChange={(e) => onDropoutChange(e.target.value)}
         >

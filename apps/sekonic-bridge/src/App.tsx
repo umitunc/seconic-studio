@@ -1,6 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SidebarNav, NavTab } from './components/layout/SidebarNav';
 import { TopControlBar } from './components/layout/TopControlBar';
+import {
+  DEFAULT_THEME_PREFS,
+  FONT_STACKS,
+  SEED_PALETTES,
+  UiThemePrefs,
+  UxiglThemeStudio,
+} from './components/layout/UxiglThemeStudio';
 import { exportScannedRows } from './utils/exportScans';
 import { DeviceTelemetryCard, PortOption } from './components/cockpit/DeviceTelemetryCard';
 import { KpiStrip } from './components/cockpit/KpiStrip';
@@ -13,16 +20,66 @@ import { FormDesignerView } from './components/designer/FormDesignerView';
 import { ScanHistoryView } from './components/history/ScanHistoryView';
 import { SettingsView, HardwareSettings } from './components/settings/SettingsView';
 import { createSimulatedRow } from './services/bridgeClient';
-import { AgentInfo, LocalAgentClient, RawGradedSheet } from './services/localAgentClient';
+import { AgentInfo, LocalAgentClient, RawGradedSheet, ScanPhase } from './services/localAgentClient';
 import { ScannedRow, ThresholdPolicy } from './types/scanner';
+import {
+  FormTemplate,
+  loadActiveTemplateId,
+  loadTemplates,
+  parseFmtOrBldm,
+  saveActiveTemplateId,
+  saveTemplates,
+  templateToOmrSchema,
+} from './utils/formTemplates';
 
-function mapRawSheetToRow(parsed: RawGradedSheet): ScannedRow {
+function findDecodedField(
+  decoded: Record<string, string>,
+  exactKeys: string[],
+  partialTerms: string[],
+): string {
+  for (const k of exactKeys) {
+    if (decoded[k] !== undefined) return decoded[k].trim();
+  }
+  const entry = Object.entries(decoded).find(([k]) => {
+    const lower = k.toLocaleLowerCase('tr-TR');
+    return partialTerms.some((term) => lower.includes(term));
+  });
+  return entry ? entry[1].trim() : '';
+}
+
+function mapRawSheetToRow(parsed: RawGradedSheet, template?: FormTemplate | null): ScannedRow {
+  const decoded = parsed.decoded_fields ?? {};
+  const answersMap = parsed.answers ?? {};
+
+  const studentId = findDecodedField(
+    decoded,
+    ['student_id', 'ogrenci_no', 'öğrenci_no'],
+    ['ogrenci', 'öğrenci', 'student'],
+  );
+  const studentName = findDecodedField(
+    decoded,
+    ['adi_soyadi', 'adı_soyadı', 'ad_soyad', 'student_name'],
+    ['adi', 'adı', 'soyad', 'name'],
+  );
+  const booklet = findDecodedField(
+    decoded,
+    ['kitapcik', 'kitapçık', 'booklet'],
+    ['kitap', 'booklet'],
+  );
+
+  const answersSummary = template
+    ? template.fields
+        .filter((f) => f.fieldType === 'subject_questions')
+        .map((f) => answersMap[f.key] ?? '')
+        .join('')
+    : Object.values(answersMap).join('');
+
   return {
     id: parsed.seq_no,
     seqNo: parsed.seq_no,
-    studentId: parsed.decoded_fields?.student_id || '????????',
-    studentName: parsed.missing_required_field ? 'Tanımsız' : 'Okundu',
-    booklet: parsed.decoded_fields?.kitapcik || 'A',
+    studentId,
+    studentName,
+    booklet,
     stacker: parsed.missing_required_field ? 'sub' : 'main',
     confidence: parsed.needs_operator_review ? 72 : 98,
     status: parsed.missing_required_field
@@ -30,7 +87,9 @@ function mapRawSheetToRow(parsed: RawGradedSheet): ScannedRow {
       : (parsed.warnings?.length ?? 0) > 0
         ? 'Silgi Kurtarıldı'
         : 'Tamam',
-    answersSummary: Object.values(parsed.answers ?? {}).join(' '),
+    answersSummary,
+    decodedFields: decoded,
+    answers: answersMap,
     rawMatrixB64: parsed.raw_matrix_b64 ?? '',
   };
 }
@@ -84,25 +143,104 @@ export const App: React.FC = () => {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
-    const saved = localStorage.getItem('sekonic-theme');
-    return saved === 'dark' ? 'dark' : 'light';
+  const [themePrefs, setThemePrefs] = useState<UiThemePrefs>(() => {
+    try {
+      const raw = localStorage.getItem('sekonic-ui-prefs');
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<UiThemePrefs>;
+        return {
+          mode: parsed.mode === 'dark' || parsed.mode === 'system' ? parsed.mode : 'light',
+          fontSize: typeof parsed.fontSize === 'number' && parsed.fontSize >= 11 && parsed.fontSize <= 18 ? parsed.fontSize : 13,
+          fontFamily: parsed.fontFamily === 'readable' || parsed.fontFamily === 'mono' ? parsed.fontFamily : 'system',
+          palette: parsed.palette && parsed.palette in SEED_PALETTES ? parsed.palette : 'graphite',
+          radius: typeof parsed.radius === 'number' && parsed.radius >= 4 && parsed.radius <= 20 ? parsed.radius : 12,
+          sidebarOpen: typeof parsed.sidebarOpen === 'boolean' ? parsed.sidebarOpen : true,
+        };
+      }
+    } catch {
+      // ignore
+    }
+    const legacy = localStorage.getItem('sekonic-theme');
+    return { ...DEFAULT_THEME_PREFS, mode: legacy === 'dark' ? 'dark' : 'light' };
   });
+  const [themeStudioOpen, setThemeStudioOpen] = useState(false);
+  const [systemDark, setSystemDark] = useState<boolean>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  const theme: 'light' | 'dark' =
+    themePrefs.mode === 'system' ? (systemDark ? 'dark' : 'light') : themePrefs.mode;
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const saved = Number(localStorage.getItem('sekonic-sidebar-w'));
     return saved >= 160 && saved <= 360 ? saved : 220;
   });
+  const [cockpitLeftWidth, setCockpitLeftWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem('sekonic-cockpit-left-w'));
+    return saved >= 240 && saved <= 520 ? saved : 300;
+  });
   const [scanning, setScanning] = useState(false);
+  const [scanPhase, setScanPhase] = useState<ScanPhase>('idle');
   const [simulatorMode, setSimulatorMode] = useState(false);
   const [dropoutLed, setDropoutLed] = useState('Red');
   const [ports, setPorts] = useState<PortOption[]>([]);
   const [selectedPort, setSelectedPort] = useState('');
   const [baudRate, setBaudRate] = useState(38400);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [templates, setTemplates] = useState<FormTemplate[]>(() => loadTemplates());
+  const [activeTemplateId, setActiveTemplateId] = useState<string>(() =>
+    loadActiveTemplateId(loadTemplates()),
+  );
   const [agentInfo, setAgentInfo] = useState<AgentInfo>(() => ({
     state: getTauriInvoke() ? 'tauri' : 'connecting',
   }));
   const agentRef = useRef<LocalAgentClient | null>(null);
+
+  useEffect(() => {
+    saveTemplates(templates);
+  }, [templates]);
+
+  useEffect(() => {
+    saveActiveTemplateId(activeTemplateId);
+  }, [activeTemplateId]);
+
+  const activeTemplate = useMemo(
+    () => templates.find((t) => t.id === activeTemplateId) ?? templates[0] ?? null,
+    [templates, activeTemplateId],
+  );
+  const activeTemplateRef = useRef<FormTemplate | null>(activeTemplate);
+  useEffect(() => {
+    activeTemplateRef.current = activeTemplate;
+  }, [activeTemplate]);
+
+  const handleImportFmtFile = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === 'string' ? reader.result : '';
+      const parsed = parseFmtOrBldm(text);
+      if (!parsed || parsed.fields.length === 0) {
+        setErrorMsg(`'${file.name}' geçerli bir .fmt / .bldm şablonu olarak okunamadı.`);
+        return;
+      }
+      const id = `tpl_${Date.now()}`;
+      const name = file.name.replace(/\.(fmt|bldm|txt)$/i, '');
+      const nextTpl: FormTemplate = {
+        id,
+        name,
+        rows: parsed.rows,
+        cols: parsed.cols,
+        fields: parsed.fields,
+      };
+      setTemplates((prev) => [nextTpl, ...prev]);
+      setActiveTemplateId(id);
+      setErrorMsg(null);
+    };
+    reader.readAsText(file, 'windows-1254');
+  }, []);
   const [rows, setRows] = useState<ScannedRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<ScannedRow | null>(null);
   const [showRightPanel, setShowRightPanel] = useState(false);
@@ -123,7 +261,7 @@ export const App: React.FC = () => {
     manualFeedTimeoutSec: 2,
     densityEnabled: true,
     densityUpperLimit: 22,
-    barcodeEnabled: true,
+    barcodeEnabled: false,
     language: 'tr',
     printerEnabled: false,
     printerPrintSeq: false,
@@ -137,9 +275,25 @@ export const App: React.FC = () => {
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('sekonic-theme', theme);
-  }, [theme]);
+    const root = document.documentElement;
+    const pal = SEED_PALETTES[themePrefs.palette] ?? SEED_PALETTES.graphite;
+    root.setAttribute('data-theme', theme);
+    root.style.setProperty('--uxigl-font-size', `${themePrefs.fontSize}px`);
+    root.style.setProperty('--uxu-font-scale', (themePrefs.fontSize / 13).toFixed(3));
+    root.style.setProperty('--uxigl-font-family', FONT_STACKS[themePrefs.fontFamily]);
+    root.style.setProperty('--uxigl-radius', `${themePrefs.radius}px`);
+    root.style.setProperty('--uxu-accent', pal.accent);
+    root.style.setProperty('--uxigl-accent-soft', pal.accentSoft);
+    root.style.setProperty('--uxigl-primary-bg', theme === 'dark' ? pal.primaryDark : pal.primaryLight);
+    root.style.setProperty('--uxu-sidebar-width', `${sidebarWidth}px`);
+    root.style.fontSize = `${themePrefs.fontSize}px`;
+    try {
+      localStorage.setItem('sekonic-ui-prefs', JSON.stringify(themePrefs));
+      localStorage.setItem('sekonic-theme', theme);
+    } catch {
+      // ignore
+    }
+  }, [themePrefs, theme, sidebarWidth]);
 
   const refreshPorts = useCallback(async () => {
     const invoke = getTauriInvoke();
@@ -191,19 +345,26 @@ export const App: React.FC = () => {
         }
       },
       onSheetScanned: (parsed) => {
-        const row = mapRawSheetToRow(parsed);
+        const row = mapRawSheetToRow(parsed, activeTemplateRef.current);
         setRows((prev) => [row, ...prev]);
         setSelectedRow((cur) => cur ?? row);
       },
       onScannerError: (msg) => {
         setErrorMsg(msg);
         setScanning(false);
+        setScanPhase('idle');
       },
-      onScannerStatus: (isScanning) => {
+      onScannerStatus: (isScanning, phase) => {
         setScanning(isScanning);
+        if (phase) {
+          setScanPhase(phase);
+        } else {
+          setScanPhase(isScanning ? 'scanning' : 'idle');
+        }
       },
       onHopperEmpty: () => {
         setScanning(false);
+        setScanPhase('idle');
       },
     });
     agentRef.current = client;
@@ -226,7 +387,7 @@ export const App: React.FC = () => {
       w.__TAURI__.event.listen('sheet:scanned', (e) => {
         try {
           const parsed = JSON.parse(String(e.payload)) as RawGradedSheet;
-          const row = mapRawSheetToRow(parsed);
+          const row = mapRawSheetToRow(parsed, activeTemplateRef.current);
           setRows((prev) => [row, ...prev]);
           setSelectedRow((cur) => cur ?? row);
         } catch {
@@ -263,10 +424,12 @@ export const App: React.FC = () => {
   }, [scanning, simulatorMode]);
 
   const handleStart = async () => {
+    if (scanPhase === 'initializing' || scanning) return;
     setErrorMsg(null);
     if (activeTab !== 'scan') setActiveTab('scan');
     const invoke = getTauriInvoke();
     if (invoke) {
+      setScanPhase('initializing');
       try {
         await invoke('start_scan', {
           portId: selectedPort,
@@ -274,29 +437,41 @@ export const App: React.FC = () => {
           simulatorMode,
         });
         setScanning(true);
+        setScanPhase('scanning');
       } catch (e) {
         setErrorMsg(String(e));
+        setScanPhase('idle');
       }
       return;
     }
 
     const agent = agentRef.current;
     if (agent && agent.isConnected()) {
+      if (!activeTemplate) {
+        setErrorMsg('Lütfen önce bir optik form şablonu seçin veya .fmt dosyası yükleyin.');
+        return;
+      }
+      setScanPhase('initializing');
       try {
+        const schema = templateToOmrSchema(activeTemplate, policy, hwSettings.duplex, dropoutLed);
         await agent.startScan({
           portId: selectedPort,
           baudRate,
           simulatorMode,
+          enableBarcode: hwSettings.barcodeEnabled,
+          schema,
         });
-        setScanning(true);
       } catch (e) {
         setErrorMsg(e instanceof Error ? e.message : String(e));
+        setScanning(false);
+        setScanPhase('idle');
       }
       return;
     }
 
     if (simulatorMode) {
       setScanning(true);
+      setScanPhase('scanning');
     } else {
       setErrorMsg(
         'Gerçek COM/USB tarayıcıya bağlanmak için Sekonic Yerel Ajanını (sekonic-agent.exe) indirip çalıştırın.',
@@ -312,6 +487,7 @@ export const App: React.FC = () => {
       await agentRef.current.stopScan().catch(() => {});
     }
     setScanning(false);
+    setScanPhase('idle');
   };
 
   useEffect(() => {
@@ -350,48 +526,73 @@ export const App: React.FC = () => {
     window.addEventListener('mouseup', onUp);
   };
 
+  const startCockpitLeftResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = cockpitLeftWidth;
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(240, Math.min(520, startW + (ev.clientX - startX)));
+      setCockpitLeftWidth(next);
+      localStorage.setItem('sekonic-cockpit-left-w', String(next));
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
   return (
-    <div style={{ minHeight: '100vh', padding: 14, display: 'flex', gap: 4 }}>
-      <SidebarNav
-        activeTab={activeTab}
-        onSelectTab={setActiveTab}
-        theme={theme}
-        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-        width={sidebarWidth}
-      />
-      <div
-        onMouseDown={startSidebarResize}
-        title="Kenar çubuğunu yeniden boyutlandır"
-        style={{
-          width: 8,
-          cursor: 'col-resize',
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <div style={{ width: 2, height: 36, borderRadius: 2, background: 'var(--uxigl-border)' }} />
-      </div>
+    <>
+    <div className="uxigl-app-scale" style={{ minHeight: '100vh', padding: 14, display: 'flex', gap: 4 }}>
+      {themePrefs.sidebarOpen && (
+        <>
+          <SidebarNav
+            activeTab={activeTab}
+            onSelectTab={setActiveTab}
+            width={sidebarWidth}
+          />
+          <div
+            onMouseDown={startSidebarResize}
+            title="Kenar çubuğunu yeniden boyutlandır"
+            style={{
+              width: 8,
+              cursor: 'col-resize',
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <div style={{ width: 2, height: 36, borderRadius: 2, background: 'var(--uxigl-border)' }} />
+          </div>
+        </>
+      )}
 
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <TopControlBar
           activeTab={activeTab}
           scanning={scanning}
+          scanPhase={scanPhase}
           simulatorMode={simulatorMode}
           selectedPort={selectedPort}
+          activeTemplateName={activeTemplate?.name ?? ''}
           rowCount={rows.length}
           agentInfo={agentInfo}
+          themeStudioOpen={themeStudioOpen}
+          onToggleThemeStudio={() => setThemeStudioOpen((o) => !o)}
           onStart={() => void handleStart()}
           onStop={() => void handleStop()}
-          onExport={(format) => exportScannedRows(rows, format)}
+          onExport={(format) => exportScannedRows(rows, format, activeTemplate ?? undefined)}
         />
 
         {activeTab === 'scan' && (
-          <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 0 }}>
-            <div style={{ width: 270, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0 }}>
+            <div style={{ width: cockpitLeftWidth, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
               <DeviceTelemetryCard
                 scanning={scanning}
+                scanPhase={scanPhase}
                 simulatorMode={simulatorMode}
                 onToggleSimulator={setSimulatorMode}
                 dropoutLed={dropoutLed}
@@ -405,6 +606,11 @@ export const App: React.FC = () => {
                 errorMsg={errorMsg}
                 agentInfo={agentInfo}
                 onReconnectAgent={() => agentRef.current?.reconnectNow()}
+                templates={templates}
+                activeTemplateId={activeTemplateId}
+                onSelectTemplate={setActiveTemplateId}
+                onImportFmtFile={handleImportFmtFile}
+                onOpenDesigner={() => setActiveTab('forms')}
               />
               <SheetCanvasPreview
                 row={selectedRow}
@@ -413,6 +619,21 @@ export const App: React.FC = () => {
                   if (selectedRow) setReviewRow(selectedRow);
                 }}
               />
+            </div>
+
+            <div
+              onMouseDown={startCockpitLeftResize}
+              title="Cihaz & Form panelini yeniden boyutlandır"
+              style={{
+                width: 8,
+                cursor: 'col-resize',
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <div style={{ width: 2, height: 42, borderRadius: 2, background: 'var(--uxigl-border)' }} />
             </div>
 
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
@@ -456,7 +677,15 @@ export const App: React.FC = () => {
         {activeTab === 'history' && <ScanHistoryView theme={theme} />}
 
         {activeTab === 'forms' && (
-          <FormDesignerView theme={theme} policy={policy} onPolicyChange={setPolicy} />
+          <FormDesignerView
+            theme={theme}
+            policy={policy}
+            onPolicyChange={setPolicy}
+            templates={templates}
+            activeTemplateId={activeTemplateId}
+            onTemplatesChange={setTemplates}
+            onSelectTemplate={setActiveTemplateId}
+          />
         )}
 
         {activeTab === 'settings' && (
@@ -499,5 +728,24 @@ export const App: React.FC = () => {
         }}
       />
     </div>
+
+    <UxiglThemeStudio
+      open={themeStudioOpen}
+      onClose={() => setThemeStudioOpen(false)}
+      prefs={themePrefs}
+      resolvedMode={theme}
+      sidebarWidth={sidebarWidth}
+      onChangeSidebarWidth={(w) => {
+        setSidebarWidth(w);
+        localStorage.setItem('sekonic-sidebar-w', String(w));
+      }}
+      onChangePrefs={setThemePrefs}
+      onReset={() => {
+        setThemePrefs(DEFAULT_THEME_PREFS);
+        setSidebarWidth(220);
+        localStorage.setItem('sekonic-sidebar-w', '220');
+      }}
+    />
+    </>
   );
 };

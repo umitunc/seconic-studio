@@ -1,16 +1,33 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Square, Wifi, WifiOff, Usb, Download, ChevronDown, FileSpreadsheet, FileText, FileJson } from 'lucide-react';
+import {
+  Play,
+  Square,
+  Wifi,
+  WifiOff,
+  Usb,
+  Download,
+  ChevronDown,
+  FileSpreadsheet,
+  FileText,
+  FileJson,
+  Palette,
+  Loader2,
+} from 'lucide-react';
 import { NavTab } from './SidebarNav';
 import { ExportFormat } from '../../utils/exportScans';
-import { AgentInfo } from '../../services/localAgentClient';
+import { AgentInfo, ScanPhase } from '../../services/localAgentClient';
 
 interface TopControlBarProps {
   activeTab: NavTab;
   scanning: boolean;
+  scanPhase: ScanPhase;
   simulatorMode: boolean;
   selectedPort: string;
+  activeTemplateName: string;
   rowCount: number;
   agentInfo: AgentInfo;
+  themeStudioOpen: boolean;
+  onToggleThemeStudio: () => void;
   onStart: () => void;
   onStop: () => void;
   onExport: (format: ExportFormat) => void;
@@ -26,10 +43,14 @@ const TITLES: Record<NavTab, string> = {
 export const TopControlBar: React.FC<TopControlBarProps> = ({
   activeTab,
   scanning,
+  scanPhase,
   simulatorMode,
   selectedPort,
+  activeTemplateName,
   rowCount,
   agentInfo,
+  themeStudioOpen,
+  onToggleThemeStudio,
   onStart,
   onStop,
   onExport,
@@ -67,6 +88,12 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{TITLES[activeTab]}</span>
+        <span className="uxigl-pill" title={`Aktif Optik Form: ${activeTemplateName}`}>
+          <FileText size={13} />
+          <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {activeTemplateName || 'Form Seçilmedi'}
+          </span>
+        </span>
         <span className="uxigl-pill">
           <Usb size={13} />
           {simulatorMode
@@ -99,80 +126,97 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
         </span>
       </div>
 
-      {activeTab === 'scan' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div ref={dropdownRef} style={{ position: 'relative' }}>
-            <button
-              type="button"
-              className="uxigl-btn"
-              disabled={rowCount === 0}
-              title={rowCount === 0 ? 'Dışa aktarmak için önce okuma başlatın' : `${rowCount} kaydı dışa aktar`}
-              onClick={() => setExportOpen((v) => !v)}
-              style={{ opacity: rowCount === 0 ? 0.5 : 1 }}
-            >
-              <Download size={14} />
-              <span>Dışa Aktar</span>
-              <ChevronDown size={13} />
-            </button>
-
-            {exportOpen && rowCount > 0 && (
-              <div
-                className="uxigl-glass-card"
-                style={{
-                  position: 'absolute',
-                  top: 'calc(100% + 6px)',
-                  right: 0,
-                  minWidth: 180,
-                  padding: 6,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                  zIndex: 50,
-                  boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)',
-                }}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {activeTab === 'scan' && (
+          <>
+            <div ref={dropdownRef} style={{ position: 'relative' }}>
+              <button
+                type="button"
+                className="uxigl-btn"
+                disabled={rowCount === 0}
+                title={rowCount === 0 ? 'Dışa aktarmak için önce okuma başlatın' : `${rowCount} kaydı dışa aktar`}
+                onClick={() => setExportOpen((v) => !v)}
+                style={{ opacity: rowCount === 0 ? 0.5 : 1 }}
               >
-                <button
-                  type="button"
-                  className="uxigl-btn"
-                  style={{ justifyContent: 'flex-start', width: '100%' }}
-                  onClick={() => handleSelectExport('xlsx')}
-                >
-                  <FileSpreadsheet size={14} />
-                  <span>Excel (.xlsx)</span>
-                </button>
-                <button
-                  type="button"
-                  className="uxigl-btn"
-                  style={{ justifyContent: 'flex-start', width: '100%' }}
-                  onClick={() => handleSelectExport('txt')}
-                >
-                  <FileText size={14} />
-                  <span>Metin (.txt)</span>
-                </button>
-                <button
-                  type="button"
-                  className="uxigl-btn"
-                  style={{ justifyContent: 'flex-start', width: '100%' }}
-                  onClick={() => handleSelectExport('json')}
-                >
-                  <FileJson size={14} />
-                  <span>JSON (.json)</span>
-                </button>
-              </div>
-            )}
-          </div>
+                <Download size={14} />
+                <span>Dışa Aktar</span>
+                <ChevronDown size={13} />
+              </button>
 
-          {!scanning ? (
-            <button className="uxigl-btn uxigl-btn-primary" onClick={onStart}>
-              <Play size={14} /> Okumayı Başlat
-            </button>
-          ) : (
-            <button className="uxigl-btn uxigl-btn-danger" onClick={onStop}>
-              <Square size={14} /> Durdur
-            </button>
-          )}
-        </div>
-      )}
+              {exportOpen && rowCount > 0 && (
+                <div
+                  className="uxigl-glass-card"
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    right: 0,
+                    minWidth: 180,
+                    padding: 6,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    zIndex: 50,
+                    boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="uxigl-btn"
+                    style={{ justifyContent: 'flex-start', width: '100%' }}
+                    onClick={() => handleSelectExport('xlsx')}
+                  >
+                    <FileSpreadsheet size={14} />
+                    <span>Excel (.xlsx)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="uxigl-btn"
+                    style={{ justifyContent: 'flex-start', width: '100%' }}
+                    onClick={() => handleSelectExport('txt')}
+                  >
+                    <FileText size={14} />
+                    <span>Metin (.txt)</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="uxigl-btn"
+                    style={{ justifyContent: 'flex-start', width: '100%' }}
+                    onClick={() => handleSelectExport('json')}
+                  >
+                    <FileJson size={14} />
+                    <span>JSON (.json)</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {scanPhase === 'initializing' ? (
+              <button className="uxigl-btn uxigl-btn-primary" disabled>
+                <Loader2 size={14} className="uxigl-spin" /> Cihaz Hazırlanıyor...
+              </button>
+            ) : !scanning ? (
+              <button className="uxigl-btn uxigl-btn-primary" onClick={onStart}>
+                <Play size={14} /> Okumayı Başlat
+              </button>
+            ) : (
+              <button className="uxigl-btn uxigl-btn-danger" onClick={onStop}>
+                <Square size={14} /> Durdur
+              </button>
+            )}
+          </>
+        )}
+
+        <button
+          type="button"
+          className={`uxigl-btn ${themeStudioOpen ? 'uxigl-btn-primary' : ''}`}
+          onClick={onToggleThemeStudio}
+          title="uxiGL Tema Stüdyosu"
+          style={{ padding: '7px 12px', borderRadius: 999 }}
+        >
+          <Palette size={14} />
+          <span>Tema</span>
+        </button>
+      </div>
     </header>
   );
 };
