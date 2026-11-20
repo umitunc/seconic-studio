@@ -104,6 +104,7 @@ export function parseFmtOrBldm(text: string): { rows: number; cols: number; fiel
   const h = lines[0].split('=');
   const rows = Number(h[0]) || 51;
   const cols = Number(h[1]) || 46;
+  const isReverseMode = (h[3] ?? '').trim().toUpperCase() === 'T';
   const fields: DesignerField[] = [];
 
   for (let i = 1; i < lines.length; i++) {
@@ -117,7 +118,12 @@ export function parseFmtOrBldm(text: string): { rows: number; cols: number; fiel
       const c1 = Math.max(1, Number(p[2]) || 1) - 1;
       const c2 = Math.max(c1 + 1, Number(p[3]) || c1 + 1) - 1;
       const dir = (p[5] === 'Y' ? 'Y' : 'D') as 'D' | 'Y';
-      const alphabet = p[6] ?? '';
+      const rawAlphabet = p[6] ?? '';
+      const modeFlag = (p[7] ?? '').trim().toUpperCase();
+      const alphabet =
+        isReverseMode && modeFlag.endsWith('2')
+          ? Array.from(rawAlphabet).reverse().join('')
+          : rawAlphabet;
       const rawName = (p[8] ?? '').replace(/^\[|\]$/g, '').trim();
 
       if (!rawName || rawName.toLowerCase() === 'boş' || alphabet.trim() === '') {
