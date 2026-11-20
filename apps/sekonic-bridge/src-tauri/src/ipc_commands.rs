@@ -12,6 +12,7 @@ use sekonic_sim::virtual_sr6500::VirtualSr6500;
 use sekonic_transport::memory_channel::InMemoryTransport;
 use sekonic_transport::native_serial::{list_serial_ports, NativeSerialTransport};
 use sekonic_transport::native_usb::NativeUsbTransport;
+use sekonic_transport::native_usbskomr::{discover_usbskomr_devices, LegacyUsbSkOmrTransport};
 use sekonic_transport::traits::ScannerTransport;
 use serde::Serialize;
 use std::sync::atomic::Ordering;
@@ -39,6 +40,13 @@ pub fn list_available_ports(state: State<'_, Arc<ScannerManagerState>>) -> Vec<P
         out.push(PortOption {
             id: format!("usb:{:04x}", dev.product_id),
             label: format!("USB: {} (PID 0x{:04X})", dev.model_hint, dev.product_id),
+            kind: "usb".into(),
+        });
+    }
+    for idx in discover_usbskomr_devices() {
+        out.push(PortOption {
+            id: format!("usbskomr:{idx}"),
+            label: format!("USB: SEKONIC SR-2300/3500/6000/6500 (UsbSkOmr{idx})"),
             kind: "usb".into(),
         });
     }
@@ -199,6 +207,17 @@ pub fn start_scan(
 
     if let Some(com_port) = port_id.strip_prefix("serial:") {
         let transport = NativeSerialTransport::open(com_port, baud_rate).map_err(|e| {
+            state.scanning.store(false, Ordering::Relaxed);
+            e.to_string()
+        })?;
+        let driver = OmrScannerDriver::new(transport);
+        tauri::async_runtime::spawn(run_driver_loop(driver, schema, st, app));
+        return Ok(true);
+    }
+
+    if let Some(idx_str) = port_id.strip_prefix("usbskomr:") {
+        let idx = idx_str.parse::<u8>().map_err(|e| e.to_string())?;
+        let transport = LegacyUsbSkOmrTransport::open(idx).map_err(|e| {
             state.scanning.store(false, Ordering::Relaxed);
             e.to_string()
         })?;

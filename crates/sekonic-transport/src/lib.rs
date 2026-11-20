@@ -10,6 +10,8 @@ pub mod usb_ids;
 pub mod native_serial;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native_usb;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_usbskomr;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm_serial;

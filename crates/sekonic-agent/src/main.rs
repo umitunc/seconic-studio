@@ -11,6 +11,7 @@ use sekonic_sim::virtual_sr6500::VirtualSr6500;
 use sekonic_transport::memory_channel::InMemoryTransport;
 use sekonic_transport::native_serial::{list_serial_ports, NativeSerialTransport};
 use sekonic_transport::native_usb::{discover_usb_scanners, NativeUsbTransport};
+use sekonic_transport::native_usbskomr::{discover_usbskomr_devices, LegacyUsbSkOmrTransport};
 use sekonic_transport::traits::ScannerTransport;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -128,6 +129,13 @@ impl AgentState {
             out.push(PortOption {
                 id: format!("usb:{:04x}", dev.product_id),
                 label: format!("USB: {} (PID 0x{:04X})", dev.model_hint, dev.product_id),
+                kind: "usb".into(),
+            });
+        }
+        for idx in discover_usbskomr_devices() {
+            out.push(PortOption {
+                id: format!("usbskomr:{idx}"),
+                label: format!("USB: SEKONIC SR-2300/3500/6000/6500 (UsbSkOmr{idx})"),
                 kind: "usb".into(),
             });
         }
@@ -352,6 +360,22 @@ fn start_scan(
         let transport = NativeSerialTransport::open(com_port, baud_rate).map_err(|e| {
             state.scanning.store(false, Ordering::Relaxed);
             format!("Seri port ({com_port}) açılamadı: {e}")
+        })?;
+        let driver = OmrScannerDriver::new(transport);
+        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
+        return Ok(());
+    }
+
+    if let Some(idx_str) = port_id.strip_prefix("usbskomr:") {
+        let idx = idx_str.parse::<u8>().map_err(|e| {
+            state.scanning.store(false, Ordering::Relaxed);
+            format!("Geçersiz UsbSkOmr indeksi: {e}")
+        })?;
+        let transport = LegacyUsbSkOmrTransport::open(idx).map_err(|e| {
+            state.scanning.store(false, Ordering::Relaxed);
+            format!(
+                "USB aygıtı (UsbSkOmr{idx}) açılamadı (SekOku açıksa kapatıp tekrar deneyin): {e}"
+            )
         })?;
         let driver = OmrScannerDriver::new(transport);
         tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
