@@ -83,7 +83,7 @@ pub fn grade_sheet(schema: &OmrFormSchema, capture: &RawSheetCapture) -> GradedS
                 answer_details.insert(field.key.clone(), decisions);
             }
             _ => {
-                decoded_fields.insert(field.key.clone(), compact.trim().to_string());
+                decoded_fields.insert(field.key.clone(), compact);
                 answer_details.insert(field.key.clone(), decisions);
             }
         }

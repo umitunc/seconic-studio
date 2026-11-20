@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { ScannedRow } from '../types/scanner';
+import { FormTemplate } from './formTemplates';
 
 export type ExportFormat = 'xlsx' | 'txt' | 'json';
 
@@ -20,22 +21,45 @@ function triggerDownload(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function exportScannedRows(rows: ScannedRow[], format: ExportFormat): void {
+function formatFixedWidth(value: string, width: number): string {
+  if (width <= 0) return '';
+  if (value.length >= width) return value.slice(0, width);
+  return value.padEnd(width, ' ');
+}
+
+function buildTemplateRecord(row: ScannedRow, template: FormTemplate): Record<string, string> {
+  const record: Record<string, string> = {};
+  for (const field of template.fields) {
+    const raw =
+      field.fieldType === 'subject_questions'
+        ? (row.answers?.[field.key] ?? '')
+        : (row.decodedFields?.[field.key] ?? '');
+    record[field.label] = field.fieldType === 'subject_questions' ? raw : raw.trim();
+  }
+  return record;
+}
+
+export function exportScannedRows(
+  rows: ScannedRow[],
+  format: ExportFormat,
+  template?: FormTemplate,
+): void {
   if (rows.length === 0) return;
   const ordered = [...rows].sort((a, b) => a.seqNo - b.seqNo);
   const baseName = `sekonic-okuma-${timestampSuffix()}`;
+  const hasTemplate = Boolean(template && template.fields.length > 0);
 
   if (format === 'xlsx') {
-    const sheetData = ordered.map((r) => ({
-      Sıra: r.seqNo,
-      'Öğrenci No': r.studentId,
-      'Ad Soyad': r.studentName,
-      Kitapçık: r.booklet,
-      Tepsi: r.stacker === 'main' ? 'Ana' : 'Alt',
-      'Güven (%)': r.confidence,
-      Durum: r.status,
-      'Cevap Özeti': r.answersSummary,
-    }));
+    const sheetData = ordered.map((r) =>
+      hasTemplate && template
+        ? buildTemplateRecord(r, template)
+        : {
+            'Öğrenci No': r.studentId,
+            'Ad Soyad': r.studentName,
+            Kitapçık: r.booklet,
+            Cevaplar: r.answersSummary,
+          },
+    );
     const ws = XLSX.utils.json_to_sheet(sheetData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Okuma Sonuçları');
@@ -44,17 +68,16 @@ export function exportScannedRows(rows: ScannedRow[], format: ExportFormat): voi
   }
 
   if (format === 'json') {
-    const payload = ordered.map((r) => ({
-      seqNo: r.seqNo,
-      studentId: r.studentId,
-      studentName: r.studentName,
-      booklet: r.booklet,
-      stacker: r.stacker,
-      confidence: r.confidence,
-      status: r.status,
-      answersSummary: r.answersSummary,
-      ...(r.questionDetails ? { questionDetails: r.questionDetails } : {}),
-    }));
+    const payload = ordered.map((r) =>
+      hasTemplate && template
+        ? buildTemplateRecord(r, template)
+        : {
+            studentId: r.studentId,
+            studentName: r.studentName,
+            booklet: r.booklet,
+            answers: r.answersSummary,
+          },
+    );
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json;charset=utf-8',
     });
@@ -62,20 +85,23 @@ export function exportScannedRows(rows: ScannedRow[], format: ExportFormat): voi
     return;
   }
 
-  const header = ['SIRA', 'OGRENCI_NO', 'AD_SOYAD', 'KITAPCIK', 'TEPSI', 'GUVEN', 'DURUM', 'CEVAPLAR'].join('\t');
-  const lines = ordered.map((r) =>
-    [
-      r.seqNo,
-      r.studentId,
-      r.studentName,
-      r.booklet,
-      r.stacker === 'main' ? 'Ana' : 'Alt',
-      `${r.confidence}%`,
-      r.status,
-      r.answersSummary,
-    ].join('\t'),
-  );
-  const blob = new Blob([[header, ...lines].join('\r\n')], {
+  const lines = ordered.map((r) => {
+    if (hasTemplate && template) {
+      return template.fields
+        .map((field) => {
+          const width = field.direction === 'D' ? field.cols : field.rows;
+          const raw =
+            field.fieldType === 'subject_questions'
+              ? (r.answers?.[field.key] ?? '')
+              : (r.decodedFields?.[field.key] ?? '');
+          return formatFixedWidth(raw, width);
+        })
+        .join('');
+    }
+    return `${r.studentId}${r.studentName}${r.booklet}${r.answersSummary}`;
+  });
+
+  const blob = new Blob([lines.join('\r\n')], {
     type: 'text/plain;charset=utf-8',
   });
   triggerDownload(blob, `${baseName}.txt`);

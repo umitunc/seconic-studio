@@ -19,6 +19,8 @@ export interface ScannedRow {
   confidence: number;
   status: SheetStatus;
   answersSummary: string;
+  decodedFields?: Record<string, string>;
+  answers?: Record<string, string>;
   questionDetails?: QuestionDetail[];
   rawMatrixB64: string;
   flaggedQuestion?: {

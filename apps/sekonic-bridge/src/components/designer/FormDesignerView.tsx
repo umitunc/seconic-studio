@@ -10,142 +10,38 @@ import {
   FileText,
 } from 'lucide-react';
 import { ThresholdPolicy } from '../../types/scanner';
+import {
+  DEFAULT_TEMPLATES,
+  DesignerField,
+  FIELD_COLORS as COLORS,
+  FormTemplate,
+  parseFmtOrBldm,
+} from '../../utils/formTemplates';
 
-export interface DesignerField {
-  id: string;
-  key: string;
-  label: string;
-  fieldType: 'student_id' | 'booklet_type' | 'subject_questions';
-  direction: 'D' | 'Y';
-  alphabet: string;
-  startCol: number;
-  startRow: number;
-  cols: number;
-  rows: number;
-  color: string;
-}
+export type { DesignerField, FormTemplate };
 
-export interface FormTemplate {
-  id: string;
-  name: string;
-  rows: number;
-  cols: number;
-  fields: DesignerField[];
-}
+const DEFAULT_TEMPLATE = DEFAULT_TEMPLATES[0];
 
 interface FormDesignerViewProps {
   theme: 'light' | 'dark';
   policy: ThresholdPolicy;
   onPolicyChange: (p: ThresholdPolicy) => void;
+  templates: FormTemplate[];
+  activeTemplateId: string;
+  onTemplatesChange: React.Dispatch<React.SetStateAction<FormTemplate[]>>;
+  onSelectTemplate: (id: string) => void;
 }
 
-const DEFAULT_TEMPLATE: FormTemplate = {
-  id: 'tpl_default_bes_faktor',
-  name: 'K12 BEŞ FAKTÖR KİŞİLİK ENVANTERİ',
-  rows: 51,
-  cols: 46,
-  fields: [
-    { id: 'f1', key: 'ogrenci_no', label: 'ÖĞRENCİ NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startCol: 1, startRow: 9, cols: 5, rows: 10, color: 'rgba(56, 189, 248, 0.22)' },
-    { id: 'f2', key: 'tc_kimlik', label: 'T.C. KİMLİK NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startCol: 12, startRow: 9, cols: 11, rows: 10, color: 'rgba(168, 85, 247, 0.22)' },
-    { id: 'f3', key: 'adi_soyadi', label: 'ADI SOYADI', fieldType: 'student_id', direction: 'D', alphabet: 'ABCÇDEFGĞHIİJKLMNOÖPRSŞTUÜVYZ', startCol: 1, startRow: 22, cols: 22, rows: 29, color: 'rgba(245, 158, 11, 0.22)' },
-    { id: 'f4', key: 'sorular', label: 'SORULAR', fieldType: 'subject_questions', direction: 'Y', alphabet: '12345', startCol: 41, startRow: 1, cols: 5, rows: 50, color: 'rgba(16, 185, 129, 0.22)' },
-  ],
-};
-
-const COLORS = [
-  'rgba(56, 189, 248, 0.22)',
-  'rgba(16, 185, 129, 0.22)',
-  'rgba(245, 158, 11, 0.22)',
-  'rgba(168, 85, 247, 0.22)',
-  'rgba(236, 72, 153, 0.22)',
-];
-
-function parseFmtOrBldm(text: string): { rows: number; cols: number; fields: DesignerField[] } | null {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (lines.length < 2) return null;
-  const h = lines[0].split('=');
-  const rows = Number(h[0]) || 51;
-  const cols = Number(h[1]) || 46;
-  const fields: DesignerField[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const p = lines[i].split('=');
-    if (p.length < 7) continue;
-
-    const isFmt = p.length >= 9 && (p[4] === 'K' || p[4] === 'H') && (p[5] === 'D' || p[5] === 'Y');
-    if (isFmt) {
-      const r1 = Math.max(1, Number(p[0]) || 1) - 1;
-      const r2 = Math.max(r1 + 1, Number(p[1]) || r1 + 1) - 1;
-      const c1 = Math.max(1, Number(p[2]) || 1) - 1;
-      const c2 = Math.max(c1 + 1, Number(p[3]) || c1 + 1) - 1;
-      const dir = (p[5] === 'Y' ? 'Y' : 'D') as 'D' | 'Y';
-      const alphabet = p[6] ?? '';
-      const rawName = (p[8] ?? '').replace(/^\[|\]$/g, '').trim();
-
-      if (!rawName || rawName.toLowerCase() === 'boş' || alphabet.trim() === '') {
-        continue;
-      }
-
-      const lower = rawName.toLowerCase();
-      const fieldType: DesignerField['fieldType'] =
-        lower.includes('no') || lower.includes('tc') || lower.includes('ad') || lower.includes('kimlik')
-          ? 'student_id'
-          : lower.includes('kitap')
-            ? 'booklet_type'
-            : 'subject_questions';
-
-      fields.push({
-        id: `fmt_${i}`,
-        key: rawName.toLowerCase().replace(/[^a-z0-9çğıöşü]+/gi, '_'),
-        label: rawName,
-        fieldType,
-        direction: dir,
-        alphabet,
-        startCol: c1,
-        startRow: r1,
-        cols: c2 - c1 + 1,
-        rows: r2 - r1 + 1,
-        color: COLORS[fields.length % COLORS.length],
-      });
-    } else {
-      const r1 = Math.max(1, Number(p[1]) || 1) - 1;
-      const c1 = Math.max(1, Number(p[2]) || 1) - 1;
-      const c2 = Math.max(c1 + 1, Number(p[3]) || c1 + 1) - 1;
-      const lbl = p[6]?.trim() || `Alan ${p[0]}`;
-      fields.push({
-        id: `bldm_${i}`,
-        key: `alan_${p[0]}`,
-        label: lbl,
-        fieldType: 'subject_questions',
-        direction: 'Y',
-        alphabet: 'ABCDE',
-        startCol: c1,
-        startRow: r1,
-        cols: c2 - c1 + 1,
-        rows: 1,
-        color: COLORS[fields.length % COLORS.length],
-      });
-    }
-  }
-  return { rows, cols, fields };
-}
-
-export const FormDesignerView: React.FC<FormDesignerViewProps> = ({ theme, policy }) => {
+export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
+  theme,
+  policy,
+  templates,
+  activeTemplateId,
+  onTemplatesChange: setTemplates,
+  onSelectTemplate: setActiveTemplateId,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement | null>(null);
-  const [templates, setTemplates] = useState<FormTemplate[]>(() => {
-    try {
-      const raw = localStorage.getItem('sekonic-templates-v1');
-      if (raw) {
-        const parsed = JSON.parse(raw) as FormTemplate[];
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // ignore
-    }
-    return [DEFAULT_TEMPLATE];
-  });
-  const [activeTemplateId, setActiveTemplateId] = useState<string>(() => templates[0]?.id ?? DEFAULT_TEMPLATE.id);
   const [templateSearch, setTemplateSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [toolMode, setToolMode] = useState<'select' | 'draw'>('select');
@@ -157,14 +53,6 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({ theme, polic
   const [dragStart, setDragStart] = useState<{ c: number; r: number } | null>(null);
   const [dragEnd, setDragEnd] = useState<{ c: number; r: number } | null>(null);
   const [moveOffset, setMoveOffset] = useState<{ dc: number; dr: number } | null>(null);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('sekonic-templates-v1', JSON.stringify(templates));
-    } catch {
-      // ignore quota errors
-    }
-  }, [templates]);
 
   const activeTemplate = templates.find((t) => t.id === activeTemplateId) ?? templates[0] ?? DEFAULT_TEMPLATE;
   const fields = activeTemplate.fields;
