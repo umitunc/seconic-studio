@@ -78,7 +78,17 @@ impl VirtualSr6500 {
     }
 
     fn handle_command(&mut self, cmd: &str) -> Option<Vec<u8>> {
-        if cmd == "IS" || cmd.starts_with("NC1") || cmd.starts_with("WB1") || cmd.starts_with("BC1") || cmd.starts_with("PR1") {
+        if cmd == "IS"
+            || cmd == "SR"
+            || cmd == "CE"
+            || cmd.starts_with("RM1")
+            || cmd.starts_with("NC1")
+            || cmd.starts_with("BR1")
+            || cmd.starts_with("WB1")
+            || cmd.starts_with("BC1")
+            || cmd.starts_with("PR1")
+            || cmd.starts_with("HU")
+        {
             return Some(format!("{}0000", &cmd[..2]).into_bytes());
         }
         if cmd == "MN" {

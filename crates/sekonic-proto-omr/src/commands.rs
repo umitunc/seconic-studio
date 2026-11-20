@@ -49,6 +49,12 @@ pub fn cmd_eject(target: StackerTarget) -> &'static [u8] {
     }
 }
 
+/// Verified from `OMRAPI.dll::OMR_SetReadingMethod @ 0x10005ef2` and `SekOku.exe @ 0x4b6da4`:
+/// `RM1,3` selects 16-level optical density mode (`0..15`) for `MD0`/`MD1`.
+pub fn cmd_set_reading_method_16level() -> &'static [u8] {
+    b"RM1,3"
+}
+
 /// Verified from `OMRAPI.dll::OMR_SetNumberOfColumnsToRead @ 0x10005dd0` (`1..=48`).
 pub fn cmd_set_columns(cols: u16) -> Vec<u8> {
     format!("NC1,{cols:02}").into_bytes()

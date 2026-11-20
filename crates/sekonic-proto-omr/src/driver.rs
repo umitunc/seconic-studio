@@ -2,7 +2,8 @@ use crate::codec::{decode_ack_nak, encode_frame, STX};
 use crate::commands::{
     cmd_cancel_error, cmd_eject, cmd_feed_sheet, cmd_get_barcode, cmd_get_mark_ad,
     cmd_get_marks_md, cmd_init, cmd_machine_name, cmd_move_hopper, cmd_reset, cmd_set_back_sensor,
-    cmd_set_barcode_unit, cmd_set_columns, cmd_set_duplex, StackerTarget,
+    cmd_set_barcode_unit, cmd_set_columns, cmd_set_duplex, cmd_set_reading_method_16level,
+    StackerTarget,
 };
 use crate::status_decoder::HardwareCondition;
 use bytes::BytesMut;
@@ -27,6 +28,7 @@ pub struct OmrScannerDriver<T: ScannerTransport> {
     seq_counter: u64,
     barcode_supported: bool,
     use_md_fallback: bool,
+    rm_16level: bool,
 }
 
 impl<T: ScannerTransport> OmrScannerDriver<T> {
@@ -41,6 +43,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             barcode_supported: false,
             // Real USB Family A scanners (SR-1800/3500/6000/6500) use MD0/MD1 directly.
             use_md_fallback: is_usb,
+            rm_16level: false,
         }
     }
 
@@ -152,15 +155,22 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             }
         }
 
-        // 4. Configure number of columns (`OMR_SetNumberOfColumnsToRead`: `1..=48`)
-        let cols = schema.grid.front_cols.clamp(1, 48);
-        let _ = self.send_and_recv(&cmd_set_columns(cols)).await;
+        // 4. Select 16-level density mode (`SekOku.exe @ 0x4b6da4`: `OMR_SetReadingMethod(3, 0)` -> `RM1,3`)
+        self.rm_16level = self
+            .send_and_recv(cmd_set_reading_method_16level())
+            .await
+            .is_ok();
 
-        // 5. Configure back sensor / duplex (`BR1,0`/`BR1,1` + `WB1`)
-        let _ = self.send_and_recv(cmd_set_back_sensor(schema.duplex)).await;
-        let _ = self
-            .send_and_recv(&cmd_set_duplex(true, schema.duplex))
-            .await;
+        // 5. Configure all 48 physical sensor channels (`SekOku.exe @ 0x4b6deb`: `OMR_SetNumberOfColumnsToRead(48)`)
+        // Sending `schema.grid.front_cols` (e.g. 46) shifts the active sensor window by 2 columns!
+        let _ = self.send_and_recv(&cmd_set_columns(48)).await;
+
+        // 6. Configure back sensor (`SekOku.exe`: `OMR_SetBackSensorUnit` -> `BR1,0`/`BR1,1`; fallback `WB1`)
+        if self.send_and_recv(cmd_set_back_sensor(schema.duplex)).await.is_err() {
+            let _ = self
+                .send_and_recv(&cmd_set_duplex(true, schema.duplex))
+                .await;
+        }
 
         // 6. Optional barcode unit
         if enable_barcode {
@@ -195,11 +205,16 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         }
     }
 
-    /// Parses ASCII `MD0`/`MD1` mark matrix (`OMR_GetMarks @ 0x10003ff0`).
-    /// Response format: 6-byte header `"MD0000"` (`[0x1001dd60] = rx + 6`), followed by
-    /// comma-separated mark-level digits (`'0'/'1'` binary or `'0'..'?'` / `'0'..'F'` 16-level density).
-    /// Automatically handles both row-major and column-major layouts.
-    pub(crate) fn decode_md_into_slice(resp: &[u8], dst: &mut [u8], rows: u16, cols: u16) {
+    /// Parses ASCII `MD0`/`MD1` mark matrix (`OMR_GetMarks @ 0x10003ff0` & `SekOku.exe @ 0x4aef74`).
+    /// Response format: 6-byte header `"MD0000"`, followed by comma-separated timing-mark rows
+    /// (`num_tokens = rows`, `token_len = 48` physical sensor columns).
+    pub(crate) fn decode_md_into_slice(
+        resp: &[u8],
+        dst: &mut [u8],
+        rows: u16,
+        cols: u16,
+        force_16level: bool,
+    ) {
         let mut body = resp;
         if body.len() >= 6 && &body[..2] == b"MD" {
             body = &body[6..];
@@ -223,55 +238,44 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             .map(|&b| Self::decode_md_level(b))
             .max()
             .unwrap_or(0);
-        let is_binary = max_level <= 1;
+        let is_binary = !force_16level && max_level <= 1;
+        // In `SekOku.exe @ 0x4aefd0`, `.fmt` threshold `04` uses strict `>` (`lvl > 4`, so `0..=4` is blank
+        // and `5..=15` is marked). Map `0..=4` -> `0..=32` (< minMarkDensity 48) and `5..=15` -> `85..=255`.
         let to_density = |ch: u8| -> u8 {
             let lvl = Self::decode_md_level(ch);
             if is_binary {
                 if lvl >= 1 { 220 } else { 0 }
+            } else if lvl <= 4 {
+                lvl * 8
             } else {
-                lvl.saturating_mul(17)
+                85u8.saturating_add((lvl - 5).saturating_mul(17))
             }
         };
 
         if body.contains(&b',') {
-            let tokens: Vec<&[u8]> = body.split(|&b| b == b',').filter(|t| !t.is_empty()).collect();
-            let tok_count = tokens.len();
-            let first_len = tokens.first().map(|t| t.len()).unwrap_or(0);
-
-            // Detect whether each comma-separated token is a sensor column (length ~= rows, count ~= cols)
-            // or a timing-mark row (length ~= cols, count ~= rows).
-            let is_col_major = tok_count != r_max
-                && (tok_count == c_max
-                    || (first_len >= r_max && tok_count <= 48 && r_max > 48));
-
-            if is_col_major {
-                for (c, col_bits) in tokens.iter().enumerate() {
-                    if c >= c_max {
-                        break;
-                    }
-                    for (r, &ch) in col_bits.iter().enumerate() {
-                        if r >= r_max {
-                            break;
-                        }
-                        dst[r * c_max + c] = to_density(ch);
-                    }
+            for (r, row_bits) in body.split(|&b| b == b',').filter(|t| !t.is_empty()).enumerate() {
+                if r >= r_max {
+                    break;
                 }
-            } else {
-                for (r, row_bits) in tokens.iter().enumerate() {
-                    if r >= r_max {
-                        break;
-                    }
-                    for (c, &ch) in row_bits.iter().enumerate() {
-                        if c >= c_max {
-                            break;
-                        }
-                        dst[r * c_max + c] = to_density(ch);
-                    }
+                for (c, &ch) in row_bits.iter().take(c_max).enumerate() {
+                    dst[r * c_max + c] = to_density(ch);
                 }
             }
         } else {
-            for (i, &b) in body.iter().take(dst.len()).enumerate() {
-                dst[i] = to_density(b);
+            let src_stride = if c_max < 48 && body.len() >= r_max * 48 {
+                48
+            } else {
+                c_max.max(1)
+            };
+            for r in 0..r_max {
+                let row_start = r * src_stride;
+                if row_start >= body.len() {
+                    break;
+                }
+                let row_end = (row_start + src_stride).min(body.len());
+                for (c, &ch) in body[row_start..row_end].iter().take(c_max).enumerate() {
+                    dst[r * c_max + c] = to_density(ch);
+                }
             }
         }
     }
@@ -303,7 +307,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         let md_resp = self
             .send_and_recv_timeout(cmd_get_marks_md(back_side), DATA_TIMEOUT)
             .await?;
-        Self::decode_md_into_slice(&md_resp, dst, rows, cols);
+        Self::decode_md_into_slice(&md_resp, dst, rows, cols, self.rm_16level);
         Ok(())
     }
 

@@ -98,14 +98,39 @@ mod tests {
 
     #[test]
     fn test_decode_md_16_level_and_binary() {
-        // 16-level density (`'0'..='?'` and `'A'..='F'`): levels 0..3 stay below 55, 4..15 map to 68..255
+        // 16-level density (`RM1,3` -> `'0'..='?'` / `'A'..='F'`):
+        // SekOku `cl > 4` rule: levels 0..=4 stay below 48 (`0..=32`), levels 5..=15 map to `85..=255`.
+        // Also verifies 48-sensor rows truncate cleanly to 46-column schema without shifting!
         let mut dst = vec![0u8; 6];
-        OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(b"MD0000024,9?F", &mut dst, 2, 3);
-        assert_eq!(dst, vec![0, 34, 68, 153, 255, 255]);
+        OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(
+            b"MD0000045XX,9?FYY",
+            &mut dst,
+            2,
+            3,
+            true,
+        );
+        assert_eq!(dst, vec![0, 32, 85, 153, 255, 255]);
 
-        // Pure binary `'0'`/`'1'` still maps `'1'` -> 220
+        // Blank sheet in 16-level mode (`max_level == 1` noise) must NOT turn into binary 220!
+        let mut dst_blank = vec![0u8; 4];
+        OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(
+            b"MD000001,10",
+            &mut dst_blank,
+            2,
+            2,
+            true,
+        );
+        assert_eq!(dst_blank, vec![0, 8, 8, 0]);
+
+        // Pure binary `'0'`/`'1'` when `force_16level == false` still maps `'1'` -> 220
         let mut dst_bin = vec![0u8; 4];
-        OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(b"MD000001,10", &mut dst_bin, 2, 2);
+        OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(
+            b"MD000001,10",
+            &mut dst_bin,
+            2,
+            2,
+            false,
+        );
         assert_eq!(dst_bin, vec![0, 220, 220, 0]);
     }
 }
