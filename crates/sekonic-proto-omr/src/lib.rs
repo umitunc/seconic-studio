@@ -95,4 +95,17 @@ mod tests {
         assert_eq!(final_sim.sub_stacker.len(), 50);
         assert_eq!(final_sim.main_stacker.len(), 450);
     }
+
+    #[test]
+    fn test_decode_md_16_level_and_binary() {
+        // 16-level density (`'0'..='?'` and `'A'..='F'`): levels 0..3 stay below 55, 4..15 map to 68..255
+        let mut dst = vec![0u8; 6];
+        OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(b"MD0000024,9?F", &mut dst, 2, 3);
+        assert_eq!(dst, vec![0, 34, 68, 153, 255, 255]);
+
+        // Pure binary `'0'`/`'1'` still maps `'1'` -> 220
+        let mut dst_bin = vec![0u8; 4];
+        OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(b"MD000001,10", &mut dst_bin, 2, 2);
+        assert_eq!(dst_bin, vec![0, 220, 220, 0]);
+    }
 }

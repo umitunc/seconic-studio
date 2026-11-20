@@ -42,4 +42,10 @@ pub trait ScannerTransport: Send + Sync {
         timeout: Duration,
     ) -> Result<usize, SekonicError>;
     async fn purge(&mut self) -> Result<(), SekonicError>;
+
+    /// Returns `true` for RS-232 / framed transports (`[STX][LEN][PAYLOAD][CRC16]`),
+    /// and `false` for USB Bulk (`OMRAPI.dll` Mode 1 sends raw ASCII commands without STX/CRC16).
+    fn uses_serial_framing(&self) -> bool {
+        true
+    }
 }

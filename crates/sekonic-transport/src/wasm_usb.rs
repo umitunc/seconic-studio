@@ -31,4 +31,8 @@ impl ScannerTransport for WebUsbTransport {
     async fn purge(&mut self) -> Result<(), SekonicError> {
         Ok(())
     }
+
+    fn uses_serial_framing(&self) -> bool {
+        false
+    }
 }

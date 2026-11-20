@@ -130,9 +130,9 @@ impl VirtualSr6500 {
                 .unwrap_or("");
             return Some(format!("BD0000{bc}").into_bytes());
         }
-        if cmd == "ER0" || cmd == "ER1" {
+        if cmd == "ER1" || cmd == "ER2" || cmd == "ER0" {
             if let Some(sheet) = self.active_sheet.take() {
-                if cmd == "ER1" {
+                if cmd == "ER2" {
                     self.sub_stacker.push(sheet.seq_no);
                 } else {
                     self.main_stacker.push(sheet.seq_no);

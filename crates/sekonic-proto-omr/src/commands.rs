@@ -4,6 +4,14 @@ pub enum StackerTarget {
     Sub,
 }
 
+pub fn cmd_cancel_error() -> &'static [u8] {
+    b"CE"
+}
+
+pub fn cmd_reset() -> &'static [u8] {
+    b"SR"
+}
+
 pub fn cmd_init() -> &'static [u8] {
     b"IS"
 }
@@ -20,19 +28,38 @@ pub fn cmd_status() -> &'static [u8] {
     b"ST"
 }
 
+pub fn cmd_move_hopper(up: bool) -> &'static [u8] {
+    if up {
+        b"HU1"
+    } else {
+        b"HU0"
+    }
+}
+
 pub fn cmd_feed_sheet() -> &'static [u8] {
     b"SF"
 }
 
+/// Verified from `OMRAPI.dll::OMR_EjectSheet @ 0x10005440` (`1 <= target <= 4`):
+/// `ER1` = Main Stacker, `ER2` = Sub Stacker.
 pub fn cmd_eject(target: StackerTarget) -> &'static [u8] {
     match target {
-        StackerTarget::Main => b"ER0",
-        StackerTarget::Sub => b"ER1",
+        StackerTarget::Main => b"ER1",
+        StackerTarget::Sub => b"ER2",
     }
 }
 
+/// Verified from `OMRAPI.dll::OMR_SetNumberOfColumnsToRead @ 0x10005dd0` (`1..=48`).
 pub fn cmd_set_columns(cols: u16) -> Vec<u8> {
     format!("NC1,{cols:02}").into_bytes()
+}
+
+pub fn cmd_set_back_sensor(enabled: bool) -> &'static [u8] {
+    if enabled {
+        b"BR1,1"
+    } else {
+        b"BR1,0"
+    }
 }
 
 pub fn cmd_set_duplex(front: bool, back: bool) -> Vec<u8> {
@@ -56,5 +83,13 @@ pub fn cmd_get_mark_ad(back_side: bool) -> &'static [u8] {
         b"AD1"
     } else {
         b"AD0"
+    }
+}
+
+pub fn cmd_get_marks_md(back_side: bool) -> &'static [u8] {
+    if back_side {
+        b"MD1"
+    } else {
+        b"MD0"
     }
 }

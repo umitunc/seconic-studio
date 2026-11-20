@@ -11,16 +11,16 @@ pub fn discover_usb_scanners() -> Result<Vec<DiscoveredScanner>, SekonicError> {
     let mut found = Vec::new();
     for dev in devices {
         if dev.vendor_id() == VID_SEKONIC {
-            if let Some((family, model)) = classify_pid(dev.product_id()) {
-                found.push(DiscoveredScanner {
-                    id: format!("usb:{:04x}:{:04x}:{}", dev.vendor_id(), dev.product_id(), dev.device_address()),
-                    vendor_id: dev.vendor_id(),
-                    product_id: dev.product_id(),
-                    model_hint: model.to_string(),
-                    family,
-                    transport_kind: TransportKind::UsbBulk,
-                });
-            }
+            let (family, model) = classify_pid(dev.product_id())
+                .unwrap_or((crate::traits::DeviceFamily::FamilyAOmrGrid, "SEKONIC OMR"));
+            found.push(DiscoveredScanner {
+                id: format!("usb:{:04x}:{:04x}:{}", dev.vendor_id(), dev.product_id(), dev.device_address()),
+                vendor_id: dev.vendor_id(),
+                product_id: dev.product_id(),
+                model_hint: model.to_string(),
+                family,
+                transport_kind: TransportKind::UsbBulk,
+            });
         }
     }
     Ok(found)
@@ -145,5 +145,9 @@ impl ScannerTransport for NativeUsbTransport {
 
     async fn purge(&mut self) -> Result<(), SekonicError> {
         Ok(())
+    }
+
+    fn uses_serial_framing(&self) -> bool {
+        false
     }
 }
