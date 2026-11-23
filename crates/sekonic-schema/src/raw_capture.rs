@@ -10,6 +10,10 @@ pub struct RawSheetCapture {
     pub matrix: Matrix2D,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_wire_sample: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_front_rows: Option<u16>,
+    #[serde(default)]
+    pub right_edge_timing_detected: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

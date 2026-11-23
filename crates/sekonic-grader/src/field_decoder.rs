@@ -29,6 +29,22 @@ pub fn grade_sheet(schema: &OmrFormSchema, capture: &RawSheetCapture) -> GradedS
     let mut needs_operator_review = false;
     let mut missing_required_field = false;
 
+    if capture.right_edge_timing_detected {
+        needs_operator_review = true;
+        missing_required_field = true;
+        warnings.push("kağıt_ters_yön_sağ_referans".to_string());
+    }
+    if let Some(obs_rows) = capture.observed_front_rows {
+        if obs_rows != schema.grid.front_rows {
+            needs_operator_review = true;
+            missing_required_field = true;
+            warnings.push(format!(
+                "okuma_çizgisi_uyumsuz:{obs_rows}/{}",
+                schema.grid.front_rows
+            ));
+        }
+    }
+
     for field in &schema.fields {
         let mut decisions = Vec::with_capacity(field.items.len());
         let mut compact = String::with_capacity(field.items.len());

@@ -16,6 +16,7 @@ use std::time::Duration;
 const CONTROL_TIMEOUT: Duration = Duration::from_millis(5000);
 const FEED_TIMEOUT: Duration = Duration::from_millis(20000);
 const DATA_TIMEOUT: Duration = Duration::from_millis(10000);
+const MD_CONTINUATION_TIMEOUT: Duration = Duration::from_millis(60);
 
 /// Matches `OMRAPI.dll::_OMR_ReceiveACKorNAK` (`0x200` = 512 bytes) so USB Bulk IN never overflows.
 const ACK_READ_BUF_LEN: usize = 512;
@@ -38,7 +39,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         Self {
             transport,
             tx_buf: BytesMut::with_capacity(4096),
-            rx_buf: vec![0u8; 16384],
+            rx_buf: vec![0u8; 32768],
             model_name: String::new(),
             seq_counter: 0,
             barcode_supported: false,
@@ -226,12 +227,14 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         let _ = self.send_and_recv(cmd_move_hopper(false)).await;
     }
 
-    /// Decodes a single ASCII mark level character from `MD0`/`MD1` (`OMR_GetMarks @ 0x10003ff0`).
-    /// Supports both `sub dl, 0x30` (`'0'..='?'` -> `0..=15`) and ASCII hex (`'A'..='F'` -> `10..=15`).
+    /// Decodes a single ASCII mark level character from `MD0`/`MD1` (`OMR_GetMarks @ 0x10004130`).
+    /// Real SR-1800/3500/6000/6500 hardware in `RM1,3` mode executes `sub dl, 0x30` (`[ebp] = 0x10`),
+    /// producing values `0..=16` encoded as `'0'..='@'` (`0x30..=0x40`), where `'@'` (`16`) is the
+    /// darkest mark! Also supports hex `'A'..='F'` -> `10..=15` for simulator/legacy variants.
     #[inline]
     fn decode_md_level(ch: u8) -> u8 {
         match ch {
-            b'0'..=b'?' => ch - b'0',
+            b'0'..=b'@' => ch - b'0',
             b'A'..=b'F' => ch - b'A' + 10,
             b'a'..=b'f' => ch - b'a' + 10,
             _ => 0,
@@ -239,15 +242,16 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
     }
 
     /// Parses ASCII `MD0`/`MD1` mark matrix (`OMR_GetMarks @ 0x10003ff0` & `SekOku.exe @ 0x4aef74`).
-    /// Response format: 6-byte header `"MD0000"`, followed by comma-separated timing-mark rows
+    /// Response format: 6-byte header `"MD00@@"`, followed by comma-separated timing-mark rows
     /// (`num_tokens = rows`, `token_len = 48` physical sensor columns).
+    /// Returns `(observed_rows, right_edge_timing_detected)`.
     pub(crate) fn decode_md_into_slice(
         resp: &[u8],
         dst: &mut [u8],
         rows: u16,
         cols: u16,
         force_16level: bool,
-    ) {
+    ) -> (u16, bool) {
         let mut body = resp;
         if body.len() >= 6 && &body[..2] == b"MD" {
             body = &body[6..];
@@ -273,7 +277,8 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             .unwrap_or(0);
         let is_binary = !force_16level && max_level <= 1;
         // In `SekOku.exe @ 0x4aefd0`, `.fmt` threshold `04` uses strict `>` (`lvl > 4`, so `0..=4` is blank
-        // and `5..=15` is marked). Map `0..=4` -> `0..=32` (< minMarkDensity 48) and `5..=15` -> `85..=255`.
+        // and `5..=16` is marked). Map `0..=4` -> `0..=32` (< minMarkDensity 48) and `5..=16` -> `80..=245`
+        // strictly monotonically so `'@'` (16 -> 245) > `'?'` (15 -> 230) > ... > `'5'` (5 -> 80).
         let to_density = |ch: u8| -> u8 {
             let lvl = Self::decode_md_level(ch);
             if is_binary {
@@ -281,24 +286,40 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             } else if lvl <= 4 {
                 lvl * 8
             } else {
-                85u8.saturating_add((lvl - 5).saturating_mul(17))
+                80u8.saturating_add((lvl - 5).saturating_mul(15))
             }
         };
 
         if body.contains(&b',') {
-            for (r, row_bits) in body.split(|&b| b == b',').filter(|t| !t.is_empty()).enumerate() {
-                if r >= r_max {
-                    break;
+            let tokens: Vec<&[u8]> = body.split(|&b| b == b',').filter(|t| !t.is_empty()).collect();
+            let observed_rows = u16::try_from(tokens.len()).unwrap_or(u16::MAX);
+            let mut right_edge_hits = 0usize;
+            for (r, row_bits) in tokens.iter().enumerate() {
+                if row_bits.len() >= 48
+                    && Self::decode_md_level(row_bits[46]) >= 10
+                    && Self::decode_md_level(row_bits[47]) >= 10
+                {
+                    right_edge_hits += 1;
                 }
-                for (c, &ch) in row_bits.iter().take(c_max).enumerate() {
-                    dst[r * c_max + c] = to_density(ch);
+                if r < r_max {
+                    for (c, &ch) in row_bits.iter().take(c_max).enumerate() {
+                        dst[r * c_max + c] = to_density(ch);
+                    }
                 }
             }
+            let right_edge_timing =
+                cols <= 46 && tokens.len() >= 8 && right_edge_hits * 4 >= tokens.len() * 3;
+            (observed_rows, right_edge_timing)
         } else {
             let src_stride = if c_max < 48 && body.len() >= r_max * 48 {
                 48
             } else {
                 c_max.max(1)
+            };
+            let observed_rows = if body.is_empty() {
+                0
+            } else {
+                u16::try_from(body.len() / src_stride).unwrap_or(rows)
             };
             for r in 0..r_max {
                 let row_start = r * src_stride;
@@ -310,6 +331,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
                     dst[r * c_max + c] = to_density(ch);
                 }
             }
+            (observed_rows, false)
         }
     }
 
@@ -319,7 +341,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         dst: &mut [u8],
         rows: u16,
         cols: u16,
-    ) -> Result<String, SekonicError> {
+    ) -> Result<(String, Option<u16>, bool), SekonicError> {
         if !self.use_md_fallback {
             match self
                 .send_and_recv_timeout(cmd_get_mark_ad(back_side), DATA_TIMEOUT)
@@ -331,12 +353,16 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
                     dst[..copy_len].copy_from_slice(&bytes[..copy_len]);
                     let min_v = bytes.iter().copied().min().unwrap_or(0);
                     let max_v = bytes.iter().copied().max().unwrap_or(0);
-                    return Ok(format!(
-                        "AD{} len={} min={} max={}",
-                        u8::from(back_side),
-                        bytes.len(),
-                        min_v,
-                        max_v
+                    return Ok((
+                        format!(
+                            "AD{} len={} min={} max={}",
+                            u8::from(back_side),
+                            bytes.len(),
+                            min_v,
+                            max_v
+                        ),
+                        None,
+                        false,
                     ));
                 }
                 Err(_) | Ok(_) => {
@@ -345,13 +371,44 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             }
         }
 
-        let md_resp = self
+        let mut md_resp = self
             .send_and_recv_timeout(cmd_get_marks_md(back_side), DATA_TIMEOUT)
             .await?;
-        Self::decode_md_into_slice(&md_resp, dst, rows, cols, self.rm_16level);
-        Ok(String::from_utf8_lossy(&md_resp)
-            .trim_end_matches('\0')
-            .to_string())
+
+        // Reassemble multi-chunk USB / WDM (`UsbSkOmr`) reads if a driver split on a 64/512/4096B boundary
+        // before all expected rows arrived. Short-packet terminated USB transfers skip this immediately (0ms).
+        if !self.transport.uses_serial_framing() {
+            let expected_tokens = usize::from(rows);
+            while md_resp.len() >= 64 && md_resp.len() % 64 == 0 {
+                let current_tokens = md_resp.iter().filter(|&&b| b == b',').count() + 1;
+                if current_tokens >= expected_tokens {
+                    break;
+                }
+                match self
+                    .transport
+                    .read_control(&mut self.rx_buf, MD_CONTINUATION_TIMEOUT)
+                    .await
+                {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        md_resp.extend_from_slice(&self.rx_buf[..n]);
+                        if n % 64 != 0 {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        let (obs_rows, right_timing) =
+            Self::decode_md_into_slice(&md_resp, dst, rows, cols, self.rm_16level);
+        Ok((
+            String::from_utf8_lossy(&md_resp)
+                .trim_end_matches('\0')
+                .to_string(),
+            Some(obs_rows),
+            right_timing,
+        ))
     }
 
     /// Feeds one sheet and reads its mark matrix (front + optional back) and barcode.
@@ -381,7 +438,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         }
 
         let mut matrix = Matrix2D::new(schema.grid.front_rows, schema.grid.front_cols, schema.duplex);
-        let front_wire = self
+        let (front_wire, observed_front_rows, right_edge_timing_detected) = self
             .read_side_matrix(
                 false,
                 &mut matrix.front,
@@ -425,6 +482,8 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             barcode,
             matrix,
             raw_wire_sample: Some(front_wire),
+            observed_front_rows,
+            right_edge_timing_detected,
         }))
     }
 

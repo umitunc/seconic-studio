@@ -121,6 +121,8 @@ mod tests {
             barcode: None,
             matrix: m,
             raw_wire_sample: None,
+            observed_front_rows: None,
+            right_edge_timing_detected: false,
         };
 
         let mut roster = RosterValidator::new(vec!["1".into()], true);

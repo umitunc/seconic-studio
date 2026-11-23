@@ -168,6 +168,8 @@ impl<T: ScannerTransport> CisScannerDriver<T> {
             barcode: None,
             matrix,
             raw_wire_sample: None,
+            observed_front_rows: None,
+            right_edge_timing_detected: false,
         }))
     }
 

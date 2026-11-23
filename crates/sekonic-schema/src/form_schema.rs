@@ -46,7 +46,10 @@ impl Default for ThresholdPolicy {
         Self {
             min_mark_density: 48,
             strong_mark_density: 115,
-            erasure_ratio: 0.42,
+            // Matches `SekOku.exe @ 0x4af042..0x4af360`: lighter erasures (levels 5..12)
+            // lose to darker intended marks (levels 15..16), while equal/near-equal dual
+            // dark marks (> 0.82 ratio) are flagged as MultiMark (`*`).
+            erasure_ratio: 0.82,
             review_confidence_floor: 0.65,
         }
     }
