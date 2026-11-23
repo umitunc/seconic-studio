@@ -6,6 +6,7 @@ import {
   WifiOff,
   Usb,
   Download,
+  RefreshCw,
   ChevronDown,
   FileSpreadsheet,
   FileText,
@@ -17,7 +18,7 @@ import {
 } from 'lucide-react';
 import { NavTab } from './SidebarNav';
 import { ExportFormat } from '../../utils/exportScans';
-import { AgentInfo, ScanPhase } from '../../services/localAgentClient';
+import { AgentInfo, AgentUpdateInfo, ScanPhase } from '../../services/localAgentClient';
 
 interface TopControlBarProps {
   activeTab: NavTab;
@@ -28,6 +29,8 @@ interface TopControlBarProps {
   activeTemplateName: string;
   rowCount: number;
   agentInfo: AgentInfo;
+  agentUpdate: AgentUpdateInfo;
+  onUpdateAgent: () => void;
   themeStudioOpen: boolean;
   onToggleThemeStudio: () => void;
   onCopyDiagnostic: () => void;
@@ -52,6 +55,8 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   activeTemplateName,
   rowCount,
   agentInfo,
+  agentUpdate,
+  onUpdateAgent,
   themeStudioOpen,
   onToggleThemeStudio,
   onCopyDiagnostic,
@@ -135,6 +140,41 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
                 ? 'Ajan Aranıyor...'
                 : 'Yerel Ajan Gerekli'}
         </span>
+        {agentInfo.state === 'connected' && (agentUpdate.available || agentUpdate.updating) && (
+          <button
+            type="button"
+            className="uxigl-btn"
+            disabled={agentUpdate.updating}
+            onClick={onUpdateAgent}
+            title={
+              agentUpdate.latestVersion
+                ? `Ajanı v${agentUpdate.latestVersion} sürümüne güncelle`
+                : 'Sekonic Yerel Ajanını güncelle'
+            }
+            style={{
+              padding: '4px 10px',
+              fontSize: 12,
+              background: 'rgba(14, 165, 233, 0.16)',
+              borderColor: 'rgba(14, 165, 233, 0.45)',
+              color: '#0284c7',
+              fontWeight: 600,
+            }}
+          >
+            {agentUpdate.updating ? (
+              <>
+                <Loader2 size={13} className="uxigl-spin" />
+                <span>Ajan Güncelleniyor...</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw size={13} />
+                <span>
+                  Ajanı Güncelle{agentUpdate.latestVersion ? ` (v${agentUpdate.latestVersion})` : ''}
+                </span>
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

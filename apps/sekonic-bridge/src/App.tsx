@@ -22,11 +22,16 @@ import { SettingsView, HardwareSettings } from './components/settings/SettingsVi
 import { createSimulatedRow } from './services/bridgeClient';
 import {
   AgentInfo,
+  AgentUpdateInfo,
+  isNewerSemver,
   LocalAgentClient,
   RawGradedSheet,
   ScanPhase,
   ScannerDiagnosticInfo,
 } from './services/localAgentClient';
+
+declare const __APP_VERSION__: string;
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.2.8';
 import { ScannedRow, ThresholdPolicy } from './types/scanner';
 import {
   FormTemplate,
@@ -206,6 +211,7 @@ export const App: React.FC = () => {
   const [agentInfo, setAgentInfo] = useState<AgentInfo>(() => ({
     state: getTauriInvoke() ? 'tauri' : 'connecting',
   }));
+  const [agentUpdate, setAgentUpdate] = useState<AgentUpdateInfo>({ available: false });
   const agentRef = useRef<LocalAgentClient | null>(null);
 
   useEffect(() => {
@@ -333,6 +339,59 @@ export const App: React.FC = () => {
     }
   }, [selectedPort]);
 
+  const handleCheckAgentUpdate = useCallback(async () => {
+    const agent = agentRef.current;
+    if (!agent || !agent.isConnected()) return;
+    try {
+      const res = await fetch(`/downloads/agent-version.json?t=${Date.now()}`);
+      if (res.ok) {
+        const manifest = (await res.json()) as { version?: string; download_url?: string };
+        const latest = manifest.version ?? APP_VERSION;
+        const current = agent.getInfo().version ?? '0.0.0';
+        if (isNewerSemver(latest, current)) {
+          setAgentUpdate({
+            available: true,
+            currentVersion: current,
+            latestVersion: latest,
+            downloadUrl: manifest.download_url ?? `${window.location.origin}/downloads/sekonic-agent.exe`,
+            updating: false,
+          });
+          return;
+        }
+      }
+    } catch {
+      // fallback to agent check
+    }
+    try {
+      const info = await agent.checkUpdate();
+      setAgentUpdate({ ...info, updating: false });
+    } catch {
+      setAgentUpdate((prev) => ({
+        ...prev,
+        available: false,
+        error: undefined,
+      }));
+    }
+  }, []);
+
+  const handleUpdateAgent = useCallback(async () => {
+    const agent = agentRef.current;
+    if (!agent || !agent.isConnected()) return;
+    setAgentUpdate((prev) => ({ ...prev, updating: true, error: undefined }));
+    try {
+      await agent.updateAgent(agentUpdate.downloadUrl);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setAgentUpdate((prev) => ({
+        ...prev,
+        updating: false,
+        error: msg.includes('Geçersiz komut')
+          ? 'Eski ajan sürümü otomatik güncellemeyi desteklemiyor; lütfen yeni .exe dosyasını indirip çalıştırın.'
+          : msg,
+      }));
+    }
+  }, [agentUpdate.downloadUrl]);
+
   useEffect(() => {
     if (getTauriInvoke()) {
       void refreshPorts();
@@ -343,6 +402,17 @@ export const App: React.FC = () => {
       onStatusChange: (info) => {
         setAgentInfo(info);
         if (info.state === 'connected') {
+          if (info.version && isNewerSemver(APP_VERSION, info.version)) {
+            setAgentUpdate({
+              available: true,
+              currentVersion: info.version,
+              latestVersion: APP_VERSION,
+              downloadUrl: `${window.location.origin}/downloads/sekonic-agent.exe`,
+              updating: false,
+            });
+          } else {
+            setAgentUpdate({ available: false, updating: false });
+          }
           void client.listPorts().then((list) => {
             setPorts(list);
             setSelectedPort((cur) => (cur && list.some((p) => p.id === cur) ? cur : list[0]?.id ?? ''));
@@ -351,6 +421,9 @@ export const App: React.FC = () => {
         } else if (info.state === 'disconnected') {
           setPorts([]);
         }
+      },
+      onAgentUpdate: (upd) => {
+        setAgentUpdate((prev) => ({ ...prev, ...upd }));
       },
       onSheetScanned: (parsed) => {
         const row = mapRawSheetToRow(parsed, activeTemplateRef.current);
@@ -669,6 +742,8 @@ export const App: React.FC = () => {
           activeTemplateName={activeTemplate?.name ?? ''}
           rowCount={rows.length}
           agentInfo={agentInfo}
+          agentUpdate={agentUpdate}
+          onUpdateAgent={() => void handleUpdateAgent()}
           themeStudioOpen={themeStudioOpen}
           onToggleThemeStudio={() => setThemeStudioOpen((o) => !o)}
           onCopyDiagnostic={() => void handleCopyDiagnostic()}
@@ -695,6 +770,9 @@ export const App: React.FC = () => {
                 onRefreshPorts={() => void refreshPorts()}
                 errorMsg={errorMsg}
                 agentInfo={agentInfo}
+                agentUpdate={agentUpdate}
+                onUpdateAgent={() => void handleUpdateAgent()}
+                onCheckAgentUpdate={() => void handleCheckAgentUpdate()}
                 onReconnectAgent={() => agentRef.current?.reconnectNow()}
                 templates={templates}
                 activeTemplateId={activeTemplateId}

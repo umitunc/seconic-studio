@@ -4,6 +4,8 @@ fn main() {
 
     if target_os == "windows" && target_env == "msvc" {
         // PE Subsystem 6.01 -> runs on Windows 7 SP1, Windows 8, Windows 8.1, Windows 10, Windows 11
-        println!("cargo:rustc-link-arg-bins=/SUBSYSTEM:CONSOLE,6.01");
+        // WINDOWS subsystem prevents a black console window from appearing (runs in System Tray).
+        println!("cargo:rustc-link-arg-bins=/SUBSYSTEM:WINDOWS,6.01");
+        println!("cargo:rustc-link-arg-bins=/ENTRY:mainCRTStartup");
     }
 }

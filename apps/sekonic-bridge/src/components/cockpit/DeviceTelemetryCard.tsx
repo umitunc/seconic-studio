@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Cpu, Download, FileText, Gauge, RefreshCw, ShieldCheck, AlertTriangle, Upload, Search, ChevronDown, Check, X, Loader2 } from 'lucide-react';
-import { AgentInfo, ScanPhase } from '../../services/localAgentClient';
+import { AgentInfo, AgentUpdateInfo, ScanPhase } from '../../services/localAgentClient';
 import { FormTemplate } from '../../utils/formTemplates';
 
 export interface PortOption {
@@ -24,6 +24,9 @@ interface DeviceTelemetryCardProps {
   onRefreshPorts: () => void;
   errorMsg: string | null;
   agentInfo: AgentInfo;
+  agentUpdate: AgentUpdateInfo;
+  onUpdateAgent: () => void;
+  onCheckAgentUpdate: () => void;
   onReconnectAgent: () => void;
   templates: FormTemplate[];
   activeTemplateId: string;
@@ -47,6 +50,9 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
   onRefreshPorts,
   errorMsg,
   agentInfo,
+  agentUpdate,
+  onUpdateAgent,
+  onCheckAgentUpdate,
   onReconnectAgent,
   templates,
   activeTemplateId,
@@ -373,21 +379,94 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
       {!simulatorMode && (
         <div className="uxigl-subcard" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>
           {agentInfo.state === 'connected' && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 11,
-                color: '#10b981',
-                background: 'rgba(16, 185, 129, 0.12)',
-                padding: '5px 8px',
-                borderRadius: 6,
-                fontWeight: 600,
-              }}
-            >
-              <ShieldCheck size={13} />
-              <span>Yerel Ajan Bağlı {agentInfo.version ? `(v${agentInfo.version})` : ''}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 6,
+                  fontSize: 11,
+                  color: '#10b981',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  padding: '5px 8px',
+                  borderRadius: 6,
+                  fontWeight: 600,
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <ShieldCheck size={13} />
+                  <span>Yerel Ajan Bağlı {agentInfo.version ? `(v${agentInfo.version})` : ''}</span>
+                </span>
+                {(agentUpdate.available || agentUpdate.updating) ? (
+                  <button
+                    type="button"
+                    className="uxigl-btn"
+                    disabled={agentUpdate.updating}
+                    onClick={onUpdateAgent}
+                    style={{
+                      padding: '2px 8px',
+                      fontSize: 11,
+                      background: 'rgba(14, 165, 233, 0.16)',
+                      borderColor: 'rgba(14, 165, 233, 0.45)',
+                      color: '#0284c7',
+                    }}
+                  >
+                    {agentUpdate.updating ? (
+                      <>
+                        <Loader2 size={11} className="uxigl-spin" />
+                        <span>Güncelleniyor...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={11} />
+                        <span>
+                          Ajanı Güncelle{agentUpdate.latestVersion ? ` (v${agentUpdate.latestVersion})` : ''}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="uxigl-btn"
+                    onClick={onCheckAgentUpdate}
+                    title="Yeni ajan sürümü olup olmadığını kontrol et"
+                    style={{
+                      padding: '2px 7px',
+                      fontSize: 10,
+                      opacity: 0.85,
+                    }}
+                  >
+                    <RefreshCw size={10} />
+                    <span>Güncelleme Kontrol Et</span>
+                  </button>
+                )}
+              </div>
+              {agentUpdate.error && (
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: '#b45309',
+                    background: 'rgba(245, 158, 11, 0.14)',
+                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}
+                >
+                  <span>{agentUpdate.error}</span>
+                  <a
+                    href={`/downloads/sekonic-agent.exe?t=${Date.now()}`}
+                    download="sekonic-agent.exe"
+                    style={{ color: '#0284c7', fontWeight: 600, textDecoration: 'underline' }}
+                  >
+                    Yeni sekonic-agent.exe dosyasını manuel indir
+                  </a>
+                </div>
+              )}
             </div>
           )}
 

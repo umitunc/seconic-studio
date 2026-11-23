@@ -1,3 +1,6 @@
+mod tray_ui;
+mod updater;
+
 use futures_util::{SinkExt, StreamExt};
 use sekonic_grader::field_decoder::{grade_sheet, GradedSheet};
 use sekonic_proto_omr::commands::StackerTarget;
@@ -104,6 +107,14 @@ enum ClientCommand {
     GetDiagnostics {
         req_id: Option<String>,
     },
+    CheckUpdate {
+        req_id: Option<String>,
+        manifest_url: Option<String>,
+    },
+    UpdateAgent {
+        req_id: Option<String>,
+        download_url: Option<String>,
+    },
 }
 
 fn default_baud_rate() -> u32 {
@@ -125,16 +136,23 @@ struct AgentState {
     simulator_mode: AtomicBool,
     event_tx: broadcast::Sender<String>,
     diag: std::sync::Mutex<AgentDiagSnapshot>,
+    tray: Arc<tray_ui::TraySharedState>,
+    ui_cmd_tx: tokio::sync::mpsc::UnboundedSender<tray_ui::UiCommand>,
 }
 
 impl AgentState {
-    fn new() -> Arc<Self> {
+    fn new(
+        tray: Arc<tray_ui::TraySharedState>,
+        ui_cmd_tx: tokio::sync::mpsc::UnboundedSender<tray_ui::UiCommand>,
+    ) -> Arc<Self> {
         let (event_tx, _) = broadcast::channel(256);
         Arc::new(Self {
             scanning: AtomicBool::new(false),
             simulator_mode: AtomicBool::new(false),
             event_tx,
             diag: std::sync::Mutex::new(AgentDiagSnapshot::default()),
+            tray,
+            ui_cmd_tx,
         })
     }
 
@@ -165,6 +183,21 @@ impl AgentState {
     }
 
     fn broadcast_json(&self, value: serde_json::Value) {
+        if value.get("type").and_then(|v| v.as_str()) == Some("scanner:status") {
+            if let Some(scanning) = value.get("scanning").and_then(|v| v.as_bool()) {
+                self.tray.scanning.store(scanning, Ordering::Relaxed);
+                if !self.tray.updating.load(Ordering::Relaxed) {
+                    if let Ok(mut st) = self.tray.status_line.lock() {
+                        *st = if scanning {
+                            "Tarama Aktif...".to_string()
+                        } else {
+                            format!("Hazır — ws://127.0.0.1:{}", self.tray.port)
+                        };
+                    }
+                }
+                self.tray.notify_refresh();
+            }
+        }
         if let Ok(text) = serde_json::to_string(&value) {
             let _ = self.event_tx.send(text);
         }
@@ -550,6 +583,51 @@ async fn handle_client(stream: tokio::net::TcpStream, state: Arc<AgentState>) {
                                     "snapshot": snap,
                                 })
                             }
+                            Ok(ClientCommand::CheckUpdate { req_id, manifest_url }) => {
+                                match tokio::task::spawn_blocking(move || {
+                                    updater::check_for_update_blocking(manifest_url.as_deref())
+                                })
+                                .await
+                                {
+                                    Ok(Ok(res)) => {
+                                        apply_update_check_to_tray(&state, &res);
+                                        serde_json::json!({
+                                            "type": "update_status",
+                                            "req_id": req_id,
+                                            "current_version": res.current_version,
+                                            "latest_version": res.latest_version,
+                                            "download_url": res.download_url,
+                                            "update_available": res.update_available,
+                                        })
+                                    }
+                                    Ok(Err(err)) => serde_json::json!({
+                                        "type": "error",
+                                        "req_id": req_id,
+                                        "message": err,
+                                    }),
+                                    Err(err) => serde_json::json!({
+                                        "type": "error",
+                                        "req_id": req_id,
+                                        "message": format!("Güncelleme kontrol görevi hatası: {err}"),
+                                    }),
+                                }
+                            }
+                            Ok(ClientCommand::UpdateAgent { req_id, download_url }) => {
+                                if state.tray.updating.load(Ordering::Relaxed) {
+                                    serde_json::json!({
+                                        "type": "update_started",
+                                        "req_id": req_id,
+                                        "ok": true,
+                                    })
+                                } else {
+                                    let _ = state.ui_cmd_tx.send(tray_ui::UiCommand::PerformUpdate { download_url });
+                                    serde_json::json!({
+                                        "type": "update_started",
+                                        "req_id": req_id,
+                                        "ok": true,
+                                    })
+                                }
+                            }
                             Err(err) => serde_json::json!({
                                 "type": "error",
                                 "message": format!("Geçersiz komut: {err}"),
@@ -572,29 +650,157 @@ async fn handle_client(stream: tokio::net::TcpStream, state: Arc<AgentState>) {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    let port: u16 = std::env::var("SEKONIC_AGENT_PORT")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_PORT);
+fn apply_update_check_to_tray(state: &Arc<AgentState>, res: &updater::UpdateCheckResult) {
+    state.tray.update_available.store(res.update_available, Ordering::Relaxed);
+    if let Ok(mut lv) = state.tray.latest_version.lock() {
+        *lv = Some(res.latest_version.clone());
+    }
+    if let Ok(mut dl) = state.tray.download_url.lock() {
+        *dl = Some(res.download_url.clone());
+    }
+    if let Ok(mut line) = state.tray.update_line.lock() {
+        *line = if res.update_available {
+            format!("Yeni sürüm mevcut: v{} (mevcut: v{})", res.latest_version, res.current_version)
+        } else {
+            format!("Güncel (v{})", res.current_version)
+        };
+    }
+    state.tray.notify_refresh();
+}
 
+async fn run_update_flow(state: Arc<AgentState>, download_url: Option<String>) {
+    if state.tray.updating.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let dl_url = download_url
+        .or_else(|| state.tray.download_url.lock().ok().and_then(|g| g.clone()))
+        .unwrap_or_else(|| updater::DEFAULT_DOWNLOAD_URL.to_string());
+
+    if let Ok(mut st) = state.tray.status_line.lock() {
+        *st = "Güncelleme indiriliyor ve kuruluyor...".to_string();
+    }
+    state.tray.notify_refresh();
+    state.tray.show_balloon(
+        "Sekonic Ajan Güncelleniyor",
+        "Yeni sürüm indiriliyor, mevcut ajan kapatılıp güncellenecek...",
+    );
+    state.broadcast_json(serde_json::json!({
+        "type": "agent:updating",
+        "download_url": dl_url,
+    }));
+
+    let res = tokio::task::spawn_blocking(move || updater::download_and_spawn_updater(&dl_url)).await;
+    match res {
+        Ok(Ok(_staged)) => {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            state.tray.request_exit();
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            std::process::exit(0);
+        }
+        Ok(Err(err)) => {
+            state.tray.updating.store(false, Ordering::Relaxed);
+            if let Ok(mut st) = state.tray.status_line.lock() {
+                *st = format!("Hazır — ws://127.0.0.1:{}", state.tray.port);
+            }
+            if let Ok(mut ul) = state.tray.update_line.lock() {
+                *ul = format!("Güncelleme hatası: {err}");
+            }
+            state.tray.notify_refresh();
+            state.tray.show_balloon("Güncelleme Hatası", &err);
+            state.broadcast_json(serde_json::json!({
+                "type": "agent:update_error",
+                "message": err,
+            }));
+        }
+        Err(err) => {
+            state.tray.updating.store(false, Ordering::Relaxed);
+            state.tray.notify_refresh();
+            state.broadcast_json(serde_json::json!({
+                "type": "agent:update_error",
+                "message": format!("Güncelleme görevi başarısız: {err}"),
+            }));
+        }
+    }
+}
+
+async fn run_check_flow(state: Arc<AgentState>, manual: bool) {
+    let res = tokio::task::spawn_blocking(|| updater::check_for_update_blocking(None)).await;
+    match res {
+        Ok(Ok(info)) => {
+            apply_update_check_to_tray(&state, &info);
+            if info.update_available {
+                state.broadcast_json(serde_json::json!({
+                    "type": "agent:update_available",
+                    "current_version": info.current_version,
+                    "latest_version": info.latest_version,
+                    "download_url": info.download_url,
+                }));
+                let auto = state.tray.auto_update.load(Ordering::Relaxed);
+                let busy = state.scanning.load(Ordering::Relaxed);
+                if auto && !busy {
+                    run_update_flow(state, Some(info.download_url)).await;
+                } else {
+                    state.tray.show_balloon(
+                        "Yeni Sürüm Mevcut",
+                        &format!("Sekonic Ajan v{} hazır. Güncellemek için tıklayın.", info.latest_version),
+                    );
+                }
+            } else if manual {
+                state.tray.show_balloon(
+                    "Sekonic Ajan Güncel",
+                    &format!("En son sürüm (v{}) kullanılıyor.", info.current_version),
+                );
+            }
+        }
+        Ok(Err(err)) => {
+            if let Ok(mut ul) = state.tray.update_line.lock() {
+                *ul = format!("Sürüm kontrolü yapılamadı (v{})", state.tray.current_version);
+            }
+            state.tray.notify_refresh();
+            if manual {
+                state.tray.show_balloon("Güncelleme Kontrolü", &err);
+            }
+        }
+        Err(_) => {}
+    }
+}
+
+async fn run_agent_runtime(
+    port: u16,
+    tray: Arc<tray_ui::TraySharedState>,
+    ui_cmd_tx: tokio::sync::mpsc::UnboundedSender<tray_ui::UiCommand>,
+    mut ui_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<tray_ui::UiCommand>,
+) {
     let bind_addr = format!("127.0.0.1:{port}");
     let listener = match TcpListener::bind(&bind_addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("[sekonic-agent] {bind_addr} dinlenemedi (başka bir örnek çalışıyor olabilir): {e}");
-            std::process::exit(1);
+            if let Ok(mut st) = tray.status_line.lock() {
+                *st = format!("Port hatası ({bind_addr}): {e}");
+            }
+            tray.notify_refresh();
+            tray.show_balloon(
+                "Bağlantı Hatası",
+                &format!("{bind_addr} dinlenemedi (başka bir örnek çalışıyor olabilir)."),
+            );
+            return;
         }
     };
 
-    println!(
-        "Sekonic Local Bridge Agent v{} hazir -> ws://{bind_addr}",
-        env!("CARGO_PKG_VERSION")
-    );
-    println!("Web arayuzunden (https://sekonic.dijios.com) otomatik baglanti bekleniyor...");
+    let state = AgentState::new(tray.clone(), ui_cmd_tx);
 
-    let state = AgentState::new();
+    // Periodic auto-update check (startup + every 30 min)
+    let update_state = state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        run_check_flow(update_state.clone(), false).await;
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
+        interval.tick().await; // skip immediate tick
+        loop {
+            interval.tick().await;
+            run_check_flow(update_state.clone(), false).await;
+        }
+    });
 
     loop {
         tokio::select! {
@@ -604,12 +810,60 @@ async fn main() {
                     tokio::spawn(handle_client(stream, st));
                 }
             }
+            Some(cmd) = ui_cmd_rx.recv() => {
+                match cmd {
+                    tray_ui::UiCommand::CheckUpdate { manual } => {
+                        let st = state.clone();
+                        tokio::spawn(async move { run_check_flow(st, manual).await; });
+                    }
+                    tray_ui::UiCommand::PerformUpdate { download_url } => {
+                        let st = state.clone();
+                        tokio::spawn(async move { run_update_flow(st, download_url).await; });
+                    }
+                    tray_ui::UiCommand::ToggleAutoUpdate(enabled) => {
+                        let mut cfg = updater::load_config();
+                        cfg.auto_update = enabled;
+                        updater::save_config(&cfg);
+                    }
+                    tray_ui::UiCommand::Shutdown => {
+                        break;
+                    }
+                }
+            }
             _ = tokio::signal::ctrl_c() => {
-                println!("\n[sekonic-agent] Kapatiliyor...");
+                tray.request_exit();
                 break;
             }
         }
     }
+}
+
+fn main() {
+    if tray_ui::try_focus_existing_instance() {
+        return;
+    }
+
+    let port: u16 = std::env::var("SEKONIC_AGENT_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_PORT);
+
+    let cfg = updater::load_config();
+    let tray = tray_ui::TraySharedState::new(port, cfg.auto_update);
+    let (ui_cmd_tx, ui_cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let runtime_tray = tray.clone();
+    let runtime_tx = ui_cmd_tx.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("Tokio runtime failed");
+        rt.block_on(run_agent_runtime(port, runtime_tray, runtime_tx, ui_cmd_rx));
+    });
+
+    tray_ui::run_tray_ui_blocking(tray, ui_cmd_tx);
+    std::process::exit(0);
 }
 
 #[cfg(test)]

@@ -9,6 +9,34 @@ export interface AgentInfo {
   platform?: string;
 }
 
+export interface AgentUpdateInfo {
+  available: boolean;
+  currentVersion?: string;
+  latestVersion?: string;
+  downloadUrl?: string;
+  updating?: boolean;
+  error?: string;
+}
+
+export function isNewerSemver(latest: string, current: string): boolean {
+  const parse = (v: string) =>
+    v
+      .trim()
+      .replace(/^[vV]/, '')
+      .split(/[-+]/)[0]
+      .split('.')
+      .map((n) => parseInt(n, 10) || 0);
+  const a = parse(latest);
+  const b = parse(current);
+  for (let i = 0; i < 3; i++) {
+    const av = a[i] ?? 0;
+    const bv = b[i] ?? 0;
+    if (av > bv) return true;
+    if (av < bv) return false;
+  }
+  return false;
+}
+
 export interface RawGradedSheet {
   seq_no: number;
   decoded_fields?: Record<string, string>;
@@ -39,6 +67,7 @@ export interface LocalAgentHandlers {
   onScannerStatus?: (scanning: boolean, phase?: ScanPhase) => void;
   onScannerDiagnostic?: (diag: ScannerDiagnosticInfo) => void;
   onHopperEmpty?: () => void;
+  onAgentUpdate?: (update: AgentUpdateInfo) => void;
 }
 
 const DEFAULT_WS_URL = 'ws://127.0.0.1:17441';
@@ -174,6 +203,27 @@ export class LocalAgentClient {
     }
   }
 
+  public async checkUpdate(manifestUrl?: string): Promise<AgentUpdateInfo> {
+    const res = await this.sendRequest({
+      type: 'check_update',
+      manifest_url: manifestUrl ?? null,
+    });
+    return {
+      available: Boolean(res.update_available),
+      currentVersion: typeof res.current_version === 'string' ? res.current_version : undefined,
+      latestVersion: typeof res.latest_version === 'string' ? res.latest_version : undefined,
+      downloadUrl: typeof res.download_url === 'string' ? res.download_url : undefined,
+    };
+  }
+
+  public async updateAgent(downloadUrl?: string): Promise<void> {
+    this.reconnectDelayMs = 800;
+    await this.sendRequest({
+      type: 'update_agent',
+      download_url: downloadUrl ?? null,
+    });
+  }
+
   private sendRequest(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -256,6 +306,30 @@ export class LocalAgentClient {
       }
       case 'scanner:hopper_empty':
         this.handlers.onHopperEmpty?.();
+        break;
+      case 'agent:update_available':
+        this.handlers.onAgentUpdate?.({
+          available: true,
+          currentVersion: typeof msg.current_version === 'string' ? msg.current_version : undefined,
+          latestVersion: typeof msg.latest_version === 'string' ? msg.latest_version : undefined,
+          downloadUrl: typeof msg.download_url === 'string' ? msg.download_url : undefined,
+          updating: false,
+        });
+        break;
+      case 'agent:updating':
+        this.reconnectDelayMs = 800;
+        this.handlers.onAgentUpdate?.({
+          available: true,
+          downloadUrl: typeof msg.download_url === 'string' ? msg.download_url : undefined,
+          updating: true,
+        });
+        break;
+      case 'agent:update_error':
+        this.handlers.onAgentUpdate?.({
+          available: true,
+          updating: false,
+          error: String(msg.message ?? 'Ajan güncellenemedi'),
+        });
         break;
     }
   }

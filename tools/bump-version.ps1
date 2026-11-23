@@ -49,4 +49,12 @@ Update-Ver 'packages\sekonic-web-sdk\Cargo.toml' '^version\s*=\s*"\d+\.\d+\.\d+"
 Update-Ver 'packages\sekonic-web-sdk\package.json' '"version":\s*"\d+\.\d+\.\d+"' "`"version`": `"$newVer`""
 Update-Ver 'apps\sekonic-bridge\src\components\layout\SidebarNav.tsx' 'v\d+\.\d+\.\d+' "v$newVer"
 
+$manifestPath = Join-Path $root 'apps\sekonic-bridge\public\downloads\agent-version.json'
+$manifestDir = Split-Path -Parent $manifestPath
+if (-not (Test-Path $manifestDir)) {
+    New-Item -ItemType Directory -Path $manifestDir -Force | Out-Null
+}
+$manifestJson = "{`n  `"version`": `"$newVer`",`n  `"download_url`": `"https://sekonic.dijios.com/downloads/sekonic-agent.exe`",`n  `"notes`": `"Sekonic Yerel Ajan`"`n}`n"
+[System.IO.File]::WriteAllText($manifestPath, $manifestJson, $utf8)
+
 Write-Output "$oldVer to $newVer"
