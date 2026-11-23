@@ -20,7 +20,13 @@ import { FormDesignerView } from './components/designer/FormDesignerView';
 import { ScanHistoryView } from './components/history/ScanHistoryView';
 import { SettingsView, HardwareSettings } from './components/settings/SettingsView';
 import { createSimulatedRow } from './services/bridgeClient';
-import { AgentInfo, LocalAgentClient, RawGradedSheet, ScanPhase } from './services/localAgentClient';
+import {
+  AgentInfo,
+  LocalAgentClient,
+  RawGradedSheet,
+  ScanPhase,
+  ScannerDiagnosticInfo,
+} from './services/localAgentClient';
 import { ScannedRow, ThresholdPolicy } from './types/scanner';
 import {
   FormTemplate,
@@ -91,6 +97,7 @@ function mapRawSheetToRow(parsed: RawGradedSheet, template?: FormTemplate | null
     decodedFields: decoded,
     answers: answersMap,
     rawMatrixB64: parsed.raw_matrix_b64 ?? '',
+    rawWireSample: parsed.raw_wire_sample,
   };
 }
 
@@ -191,6 +198,7 @@ export const App: React.FC = () => {
   const [selectedPort, setSelectedPort] = useState('');
   const [baudRate, setBaudRate] = useState(38400);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [scannerDiag, setScannerDiag] = useState<ScannerDiagnosticInfo>({});
   const [templates, setTemplates] = useState<FormTemplate[]>(() => loadTemplates());
   const [activeTemplateId, setActiveTemplateId] = useState<string>(() =>
     loadActiveTemplateId(loadTemplates()),
@@ -361,6 +369,9 @@ export const App: React.FC = () => {
         } else {
           setScanPhase(isScanning ? 'scanning' : 'idle');
         }
+      },
+      onScannerDiagnostic: (diag) => {
+        setScannerDiag(diag);
       },
       onHopperEmpty: () => {
         setScanning(false);
@@ -543,6 +554,84 @@ export const App: React.FC = () => {
     window.addEventListener('mouseup', onUp);
   };
 
+  const handleCopyDiagnostic = useCallback(async () => {
+    const agentSnap = await agentRef.current?.getDiagnostics();
+    const ordered = [...rows].sort((a, b) => a.seqNo - b.seqNo);
+    const snapSheets = Array.isArray(agentSnap?.recent_sheets)
+      ? (agentSnap.recent_sheets as RawGradedSheet[]).map((s) => mapRawSheetToRow(s, activeTemplate))
+      : [];
+    const sourceRows = ordered.length > 0 ? ordered : snapSheets;
+
+    const sampleSheets = sourceRows.slice(0, 2).map((r) => {
+      const wire = r.rawWireSample ?? '';
+      const body = wire.startsWith('MD') && wire.length >= 6 ? wire.slice(6) : wire;
+      const tokens = body.includes(',') ? body.split(',').filter(Boolean) : [];
+      return {
+        seqNo: r.seqNo,
+        studentId: r.studentId,
+        studentName: r.studentName,
+        booklet: r.booklet,
+        decodedFields: r.decodedFields,
+        answers: r.answers,
+        wireStats: {
+          totalLen: wire.length,
+          header: wire.slice(0, 12),
+          tokenCount: tokens.length,
+          firstTokenLen: tokens[0]?.length ?? 0,
+          uniqueChars: Array.from(new Set(body.replace(/,/g, ''))).sort().join(''),
+        },
+        rawWireSample: wire,
+      };
+    });
+    const report = {
+      capturedAt: new Date().toISOString(),
+      agent: agentInfo,
+      selectedPort,
+      baudRate,
+      simulatorMode,
+      lastError: errorMsg,
+      scanner: Object.keys(scannerDiag).length > 0 ? scannerDiag : agentSnap
+        ? {
+            modelName: agentSnap.model_name,
+            rm16Level: agentSnap.rm_16level,
+            initLog: agentSnap.init_log,
+            lastError: agentSnap.last_error,
+            totalScannedInAgent: agentSnap.total_scanned,
+          }
+        : {},
+      policy,
+      template: activeTemplate
+        ? {
+            name: activeTemplate.name,
+            rows: activeTemplate.rows,
+            cols: activeTemplate.cols,
+            fields: activeTemplate.fields.map((f) => ({
+              key: f.key,
+              label: f.label,
+              type: f.fieldType,
+              dir: f.direction,
+              r: [f.startRow, f.startRow + f.rows - 1],
+              c: [f.startCol, f.startCol + f.cols - 1],
+              alphaLen: f.alphabet.length,
+            })),
+          }
+        : null,
+      totalRows: sourceRows.length,
+      sampleSheets,
+    };
+    const text = JSON.stringify(report, null, 2);
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+  }, [rows, agentInfo, selectedPort, baudRate, simulatorMode, errorMsg, scannerDiag, policy, activeTemplate]);
+
   return (
     <>
     <div className="uxigl-app-scale" style={{ minHeight: '100vh', padding: 14, display: 'flex', gap: 4 }}>
@@ -582,6 +671,7 @@ export const App: React.FC = () => {
           agentInfo={agentInfo}
           themeStudioOpen={themeStudioOpen}
           onToggleThemeStudio={() => setThemeStudioOpen((o) => !o)}
+          onCopyDiagnostic={() => void handleCopyDiagnostic()}
           onStart={() => void handleStart()}
           onStop={() => void handleStop()}
           onExport={(format) => exportScannedRows(rows, format, activeTemplate ?? undefined)}

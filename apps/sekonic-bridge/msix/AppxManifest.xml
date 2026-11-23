@@ -9,7 +9,7 @@
   <Identity
     Name="Kurum.SekonicStudio"
     Publisher="CN=00000000-0000-0000-0000-000000000000"
-    Version="0.2.4.0"
+    Version="0.2.7.0"
     ProcessorArchitecture="x64" />
 
   <Properties>
@@ -19,7 +19,7 @@
   </Properties>
 
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="0.2.4.0" MaxVersionTested="10.0.22621.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="0.2.7.0" MaxVersionTested="10.0.22621.0" />
   </Dependencies>
 
   <Resources>

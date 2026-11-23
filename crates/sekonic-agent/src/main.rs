@@ -1,5 +1,5 @@
 use futures_util::{SinkExt, StreamExt};
-use sekonic_grader::field_decoder::grade_sheet;
+use sekonic_grader::field_decoder::{grade_sheet, GradedSheet};
 use sekonic_proto_omr::commands::StackerTarget;
 use sekonic_proto_omr::driver::OmrScannerDriver;
 use sekonic_schema::form_schema::{
@@ -101,16 +101,30 @@ enum ClientCommand {
     StopScan {
         req_id: Option<String>,
     },
+    GetDiagnostics {
+        req_id: Option<String>,
+    },
 }
 
 fn default_baud_rate() -> u32 {
     38400
 }
 
+#[derive(Default, Clone, Serialize)]
+struct AgentDiagSnapshot {
+    model_name: String,
+    rm_16level: bool,
+    init_log: Vec<String>,
+    last_error: Option<String>,
+    total_scanned: u64,
+    recent_sheets: Vec<GradedSheet>,
+}
+
 struct AgentState {
     scanning: AtomicBool,
     simulator_mode: AtomicBool,
     event_tx: broadcast::Sender<String>,
+    diag: std::sync::Mutex<AgentDiagSnapshot>,
 }
 
 impl AgentState {
@@ -120,6 +134,7 @@ impl AgentState {
             scanning: AtomicBool::new(false),
             simulator_mode: AtomicBool::new(false),
             event_tx,
+            diag: std::sync::Mutex::new(AgentDiagSnapshot::default()),
         })
     }
 
@@ -242,6 +257,10 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
     }));
     if let Err(e) = driver.initialize(&schema, enable_barcode).await {
         eprintln!("[sekonic-agent] initialize hatasi: {e}");
+        if let Ok(mut d) = state.diag.lock() {
+            d.init_log = driver.init_log().to_vec();
+            d.last_error = Some(e.to_string());
+        }
         state.scanning.store(false, Ordering::Relaxed);
         state.broadcast_json(serde_json::json!({
             "type": "scanner:error",
@@ -250,26 +269,47 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
         state.broadcast_json(serde_json::json!({
             "type": "scanner:status",
             "phase": "idle",
-            "scanning": false
+            "scanning": false,
+            "init_log": driver.init_log()
         }));
         return;
     }
 
+    if let Ok(mut d) = state.diag.lock() {
+        d.model_name = driver.model_name().to_string();
+        d.rm_16level = driver.is_rm_16level();
+        d.init_log = driver.init_log().to_vec();
+        d.last_error = None;
+        d.total_scanned = 0;
+        d.recent_sheets.clear();
+    }
+
     println!(
-        "[sekonic-agent] Cihaz hazir (model='{}'), kagit besleme bekleniyor...",
-        driver.model_name()
+        "[sekonic-agent] Cihaz hazir (model='{}', rm16={}), init={:?}",
+        driver.model_name(),
+        driver.is_rm_16level(),
+        driver.init_log()
     );
 
     state.broadcast_json(serde_json::json!({
         "type": "scanner:status",
         "phase": "scanning",
-        "scanning": true
+        "scanning": true,
+        "model_name": driver.model_name(),
+        "rm_16level": driver.is_rm_16level(),
+        "init_log": driver.init_log()
     }));
 
     while state.scanning.load(Ordering::Relaxed) {
         match driver.feed_and_read_sheet(&schema, enable_barcode).await {
             Ok(Some(cap)) => {
                 let graded = grade_sheet(&schema, &cap);
+                if let Ok(mut d) = state.diag.lock() {
+                    d.total_scanned += 1;
+                    if d.recent_sheets.len() < 3 {
+                        d.recent_sheets.push(graded.clone());
+                    }
+                }
                 let target = if graded.missing_required_field {
                     StackerTarget::Sub
                 } else {
@@ -295,6 +335,9 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
             }
             Err(e) => {
                 eprintln!("[sekonic-agent] Okuma hatasi: {e}");
+                if let Ok(mut d) = state.diag.lock() {
+                    d.last_error = Some(e.to_string());
+                }
                 state.scanning.store(false, Ordering::Relaxed);
                 state.broadcast_json(serde_json::json!({
                     "type": "scanner:error",
@@ -497,6 +540,14 @@ async fn handle_client(stream: tokio::net::TcpStream, state: Arc<AgentState>) {
                                     "type": "scan_stopped",
                                     "req_id": req_id,
                                     "ok": true,
+                                })
+                            }
+                            Ok(ClientCommand::GetDiagnostics { req_id }) => {
+                                let snap = state.diag.lock().map(|d| d.clone()).unwrap_or_default();
+                                serde_json::json!({
+                                    "type": "diagnostics",
+                                    "req_id": req_id,
+                                    "snapshot": snap,
                                 })
                             }
                             Err(err) => serde_json::json!({

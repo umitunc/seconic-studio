@@ -29,6 +29,7 @@ pub struct OmrScannerDriver<T: ScannerTransport> {
     barcode_supported: bool,
     use_md_fallback: bool,
     rm_16level: bool,
+    init_log: Vec<String>,
 }
 
 impl<T: ScannerTransport> OmrScannerDriver<T> {
@@ -44,11 +45,20 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             // Real USB Family A scanners (SR-1800/3500/6000/6500) use MD0/MD1 directly.
             use_md_fallback: is_usb,
             rm_16level: false,
+            init_log: Vec::new(),
         }
     }
 
     pub fn model_name(&self) -> &str {
         &self.model_name
+    }
+
+    pub fn init_log(&self) -> &[String] {
+        &self.init_log
+    }
+
+    pub fn is_rm_16level(&self) -> bool {
+        self.rm_16level
     }
 
     /// Strips optional Serial `[STX][LEN_HI][LEN_LO][PAYLOAD][CRC_HI][CRC_LO]` wrapper if present.
@@ -136,18 +146,37 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         schema: &OmrFormSchema,
         enable_barcode: bool,
     ) -> Result<(), SekonicError> {
+        self.init_log.clear();
         let _ = self.transport.purge().await;
 
+        let fmt_res = |cmd: &str, r: &Result<Vec<u8>, SekonicError>| -> String {
+            match r {
+                Ok(b) => {
+                    let s = String::from_utf8_lossy(b);
+                    let clean: String = s.chars().filter(|c| !c.is_control()).take(64).collect();
+                    format!("{cmd} -> OK ({}B: \"{clean}\")", b.len())
+                }
+                Err(e) => format!("{cmd} -> ERR ({e})"),
+            }
+        };
+
         // 1. Clear any sticky hardware/protocol error (`OMR_CancelError` -> `CE`)
-        let _ = self.send_and_recv(cmd_cancel_error()).await;
+        let r_ce = self.send_and_recv(cmd_cancel_error()).await;
+        self.init_log.push(fmt_res("CE", &r_ce));
 
         // 2. Reset / Initialize scanner (`SekOku.exe` uses `OMR_Reset` -> `SR`; fallback to `IS`)
-        if self.send_and_recv(cmd_reset()).await.is_err() {
-            self.send_and_recv(cmd_init()).await?;
+        let r_sr = self.send_and_recv(cmd_reset()).await;
+        self.init_log.push(fmt_res("SR", &r_sr));
+        if r_sr.is_err() {
+            let r_is = self.send_and_recv(cmd_init()).await;
+            self.init_log.push(fmt_res("IS", &r_is));
+            r_is?;
         }
 
         // 3. Query machine model (`MN` -> `"MN0000SR-6500"`)
-        if let Ok(mn) = self.send_and_recv(cmd_machine_name()).await {
+        let r_mn = self.send_and_recv(cmd_machine_name()).await;
+        self.init_log.push(fmt_res("MN", &r_mn));
+        if let Ok(mn) = r_mn {
             if mn.len() > 6 {
                 self.model_name = String::from_utf8_lossy(&mn[6..])
                     .trim_matches(|c: char| c.is_whitespace() || c == '\0')
@@ -156,34 +185,38 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         }
 
         // 4. Select 16-level density mode (`SekOku.exe @ 0x4b6da4`: `OMR_SetReadingMethod(3, 0)` -> `RM1,3`)
-        self.rm_16level = self
-            .send_and_recv(cmd_set_reading_method_16level())
-            .await
-            .is_ok();
+        let r_rm = self.send_and_recv(cmd_set_reading_method_16level()).await;
+        self.init_log.push(fmt_res("RM1,3", &r_rm));
+        self.rm_16level = r_rm.is_ok();
 
         // 5. Configure all 48 physical sensor channels (`SekOku.exe @ 0x4b6deb`: `OMR_SetNumberOfColumnsToRead(48)`)
-        // Sending `schema.grid.front_cols` (e.g. 46) shifts the active sensor window by 2 columns!
-        let _ = self.send_and_recv(&cmd_set_columns(48)).await;
+        let r_nc = self.send_and_recv(&cmd_set_columns(48)).await;
+        self.init_log.push(fmt_res("NC1,48", &r_nc));
 
         // 6. Configure back sensor (`SekOku.exe`: `OMR_SetBackSensorUnit` -> `BR1,0`/`BR1,1`; fallback `WB1`)
-        if self.send_and_recv(cmd_set_back_sensor(schema.duplex)).await.is_err() {
-            let _ = self
+        let r_br = self.send_and_recv(cmd_set_back_sensor(schema.duplex)).await;
+        self.init_log.push(fmt_res("BR1", &r_br));
+        if r_br.is_err() {
+            let r_wb = self
                 .send_and_recv(&cmd_set_duplex(true, schema.duplex))
                 .await;
+            self.init_log.push(fmt_res("WB1", &r_wb));
         }
 
-        // 6. Optional barcode unit
+        // 7. Optional barcode unit
         if enable_barcode {
-            self.barcode_supported = self
-                .send_and_recv(cmd_set_barcode_unit(true))
-                .await
-                .is_ok();
+            let r_bc = self.send_and_recv(cmd_set_barcode_unit(true)).await;
+            self.init_log.push(fmt_res("BC1", &r_bc));
+            self.barcode_supported = r_bc.is_ok();
         } else {
             self.barcode_supported = false;
         }
 
-        // 7. Raise motorized hopper table (`OMR_MoveHopper(1)` -> `HU1`) on SR-3500/6000/6500
-        let _ = self.send_and_recv_timeout(cmd_move_hopper(true), FEED_TIMEOUT).await;
+        // 8. Raise motorized hopper table (`OMR_MoveHopper(1)` -> `HU1`) on SR-3500/6000/6500
+        let r_hu = self
+            .send_and_recv_timeout(cmd_move_hopper(true), FEED_TIMEOUT)
+            .await;
+        self.init_log.push(fmt_res("HU1", &r_hu));
 
         Ok(())
     }
@@ -286,7 +319,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         dst: &mut [u8],
         rows: u16,
         cols: u16,
-    ) -> Result<(), SekonicError> {
+    ) -> Result<String, SekonicError> {
         if !self.use_md_fallback {
             match self
                 .send_and_recv_timeout(cmd_get_mark_ad(back_side), DATA_TIMEOUT)
@@ -296,7 +329,15 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
                     let bytes = &resp[2..];
                     let copy_len = bytes.len().min(dst.len());
                     dst[..copy_len].copy_from_slice(&bytes[..copy_len]);
-                    return Ok(());
+                    let min_v = bytes.iter().copied().min().unwrap_or(0);
+                    let max_v = bytes.iter().copied().max().unwrap_or(0);
+                    return Ok(format!(
+                        "AD{} len={} min={} max={}",
+                        u8::from(back_side),
+                        bytes.len(),
+                        min_v,
+                        max_v
+                    ));
                 }
                 Err(_) | Ok(_) => {
                     self.use_md_fallback = true;
@@ -308,7 +349,9 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             .send_and_recv_timeout(cmd_get_marks_md(back_side), DATA_TIMEOUT)
             .await?;
         Self::decode_md_into_slice(&md_resp, dst, rows, cols, self.rm_16level);
-        Ok(())
+        Ok(String::from_utf8_lossy(&md_resp)
+            .trim_end_matches('\0')
+            .to_string())
     }
 
     /// Feeds one sheet and reads its mark matrix (front + optional back) and barcode.
@@ -338,13 +381,14 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
         }
 
         let mut matrix = Matrix2D::new(schema.grid.front_rows, schema.grid.front_cols, schema.duplex);
-        self.read_side_matrix(
-            false,
-            &mut matrix.front,
-            schema.grid.front_rows,
-            schema.grid.front_cols,
-        )
-        .await?;
+        let front_wire = self
+            .read_side_matrix(
+                false,
+                &mut matrix.front,
+                schema.grid.front_rows,
+                schema.grid.front_cols,
+            )
+            .await?;
 
         if schema.duplex {
             if let Some(back_dst) = matrix.back.as_mut() {
@@ -380,6 +424,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             timestamp_ms: 0,
             barcode,
             matrix,
+            raw_wire_sample: Some(front_wire),
         }))
     }
 

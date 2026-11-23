@@ -17,6 +17,13 @@ export interface RawGradedSheet {
   needs_operator_review?: boolean;
   warnings?: string[];
   raw_matrix_b64?: string;
+  raw_wire_sample?: string;
+}
+
+export interface ScannerDiagnosticInfo {
+  modelName?: string;
+  rm16Level?: boolean;
+  initLog?: string[];
 }
 
 interface PendingReq {
@@ -30,6 +37,7 @@ export interface LocalAgentHandlers {
   onSheetScanned?: (sheet: RawGradedSheet) => void;
   onScannerError?: (message: string) => void;
   onScannerStatus?: (scanning: boolean, phase?: ScanPhase) => void;
+  onScannerDiagnostic?: (diag: ScannerDiagnosticInfo) => void;
   onHopperEmpty?: () => void;
 }
 
@@ -157,6 +165,15 @@ export class LocalAgentClient {
     await this.sendRequest({ type: 'stop_scan' });
   }
 
+  public async getDiagnostics(): Promise<Record<string, unknown> | null> {
+    try {
+      const res = await this.sendRequest({ type: 'get_diagnostics' });
+      return (res.snapshot as Record<string, unknown>) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private sendRequest(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
@@ -227,6 +244,13 @@ export class LocalAgentClient {
             : undefined;
         if (typeof msg.scanning === 'boolean' || phase) {
           this.handlers.onScannerStatus?.(Boolean(msg.scanning), phase);
+        }
+        if (msg.model_name !== undefined || Array.isArray(msg.init_log)) {
+          this.handlers.onScannerDiagnostic?.({
+            modelName: typeof msg.model_name === 'string' ? msg.model_name : undefined,
+            rm16Level: typeof msg.rm_16level === 'boolean' ? msg.rm_16level : undefined,
+            initLog: Array.isArray(msg.init_log) ? msg.init_log.map(String) : undefined,
+          });
         }
         break;
       }

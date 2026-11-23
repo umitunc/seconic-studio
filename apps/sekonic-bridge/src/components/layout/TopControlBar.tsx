@@ -12,6 +12,8 @@ import {
   FileJson,
   Palette,
   Loader2,
+  Bug,
+  Check,
 } from 'lucide-react';
 import { NavTab } from './SidebarNav';
 import { ExportFormat } from '../../utils/exportScans';
@@ -28,6 +30,7 @@ interface TopControlBarProps {
   agentInfo: AgentInfo;
   themeStudioOpen: boolean;
   onToggleThemeStudio: () => void;
+  onCopyDiagnostic: () => void;
   onStart: () => void;
   onStop: () => void;
   onExport: (format: ExportFormat) => void;
@@ -51,12 +54,20 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
   agentInfo,
   themeStudioOpen,
   onToggleThemeStudio,
+  onCopyDiagnostic,
   onStart,
   onStop,
   onExport,
 }) => {
   const [exportOpen, setExportOpen] = useState(false);
+  const [diagCopied, setDiagCopied] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleCopyDiag = () => {
+    onCopyDiagnostic();
+    setDiagCopied(true);
+    window.setTimeout(() => setDiagCopied(false), 1800);
+  };
 
   useEffect(() => {
     const handleOutside = (e: MouseEvent) => {
@@ -205,6 +216,17 @@ export const TopControlBar: React.FC<TopControlBarProps> = ({
             )}
           </>
         )}
+
+        <button
+          type="button"
+          className="uxigl-btn"
+          onClick={handleCopyDiag}
+          title="Ham cihaz ve okuma tanı bilgisini panoya kopyala"
+          style={{ padding: '7px 11px', borderRadius: 999 }}
+        >
+          {diagCopied ? <Check size={14} color="#10b981" /> : <Bug size={14} />}
+          <span>{diagCopied ? 'Kopyalandı' : 'Tanı'}</span>
+        </button>
 
         <button
           type="button"

@@ -23,6 +23,7 @@ export interface ScannedRow {
   answers?: Record<string, string>;
   questionDetails?: QuestionDetail[];
   rawMatrixB64: string;
+  rawWireSample?: string;
   flaggedQuestion?: {
     q: number;
     densities: number[];

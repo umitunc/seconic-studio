@@ -16,6 +16,8 @@ pub struct GradedSheet {
     pub needs_operator_review: bool,
     pub missing_required_field: bool,
     pub raw_matrix_b64: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_wire_sample: Option<String>,
 }
 
 pub fn grade_sheet(schema: &OmrFormSchema, capture: &RawSheetCapture) -> GradedSheet {
@@ -101,5 +103,6 @@ pub fn grade_sheet(schema: &OmrFormSchema, capture: &RawSheetCapture) -> GradedS
         needs_operator_review,
         missing_required_field,
         raw_matrix_b64,
+        raw_wire_sample: capture.raw_wire_sample.clone(),
     }
 }

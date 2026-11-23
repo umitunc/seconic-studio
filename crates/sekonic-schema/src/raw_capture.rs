@@ -8,6 +8,8 @@ pub struct RawSheetCapture {
     pub timestamp_ms: u64,
     pub barcode: Option<String>,
     pub matrix: Matrix2D,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_wire_sample: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

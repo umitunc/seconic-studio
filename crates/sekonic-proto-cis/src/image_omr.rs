@@ -167,6 +167,7 @@ impl<T: ScannerTransport> CisScannerDriver<T> {
             timestamp_ms: 0,
             barcode: None,
             matrix,
+            raw_wire_sample: None,
         }))
     }
 

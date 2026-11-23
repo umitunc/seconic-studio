@@ -120,6 +120,7 @@ mod tests {
             timestamp_ms: 0,
             barcode: None,
             matrix: m,
+            raw_wire_sample: None,
         };
 
         let mut roster = RosterValidator::new(vec!["1".into()], true);
