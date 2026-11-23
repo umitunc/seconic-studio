@@ -430,16 +430,35 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                   <button
                     type="button"
                     className="uxigl-btn"
+                    disabled={agentUpdate.checking}
                     onClick={onCheckAgentUpdate}
                     title="Yeni ajan sürümü olup olmadığını kontrol et"
                     style={{
-                      padding: '2px 7px',
+                      padding: '2px 8px',
                       fontSize: 10,
-                      opacity: 0.85,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0,
+                      opacity: agentUpdate.checkedUpToDate ? 1 : 0.9,
+                      color: agentUpdate.checkedUpToDate ? '#059669' : undefined,
+                      borderColor: agentUpdate.checkedUpToDate ? 'rgba(16, 185, 129, 0.45)' : undefined,
                     }}
                   >
-                    <RefreshCw size={10} />
-                    <span>Güncelleme Kontrol Et</span>
+                    {agentUpdate.checking ? (
+                      <>
+                        <Loader2 size={10} className="uxigl-spin" />
+                        <span>Kontrol...</span>
+                      </>
+                    ) : agentUpdate.checkedUpToDate ? (
+                      <>
+                        <Check size={10} />
+                        <span>Güncelsiniz</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={10} />
+                        <span>Kontrol Et</span>
+                      </>
+                    )}
                   </button>
                 )}
               </div>

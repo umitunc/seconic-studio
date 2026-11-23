@@ -15,6 +15,8 @@ export interface AgentUpdateInfo {
   latestVersion?: string;
   downloadUrl?: string;
   updating?: boolean;
+  checking?: boolean;
+  checkedUpToDate?: boolean;
   error?: string;
 }
 

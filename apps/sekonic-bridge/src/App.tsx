@@ -342,6 +342,25 @@ export const App: React.FC = () => {
   const handleCheckAgentUpdate = useCallback(async () => {
     const agent = agentRef.current;
     if (!agent || !agent.isConnected()) return;
+    setAgentUpdate((prev) => ({
+      ...prev,
+      checking: true,
+      checkedUpToDate: false,
+      error: undefined,
+    }));
+    const markUpToDate = (current?: string, latest?: string) => {
+      setAgentUpdate({
+        available: false,
+        currentVersion: current,
+        latestVersion: latest,
+        checking: false,
+        checkedUpToDate: true,
+      });
+      window.setTimeout(() => {
+        setAgentUpdate((prev) => (prev.checkedUpToDate ? { ...prev, checkedUpToDate: false } : prev));
+      }, 4000);
+    };
+
     try {
       const res = await fetch(`/downloads/agent-version.json?t=${Date.now()}`);
       if (res.ok) {
@@ -355,22 +374,26 @@ export const App: React.FC = () => {
             latestVersion: latest,
             downloadUrl: manifest.download_url ?? `${window.location.origin}/downloads/sekonic-agent.exe`,
             updating: false,
+            checking: false,
+            checkedUpToDate: false,
           });
           return;
         }
+        markUpToDate(current, latest);
+        return;
       }
     } catch {
       // fallback to agent check
     }
     try {
       const info = await agent.checkUpdate();
-      setAgentUpdate({ ...info, updating: false });
+      if (info.available) {
+        setAgentUpdate({ ...info, updating: false, checking: false, checkedUpToDate: false });
+      } else {
+        markUpToDate(info.currentVersion, info.latestVersion);
+      }
     } catch {
-      setAgentUpdate((prev) => ({
-        ...prev,
-        available: false,
-        error: undefined,
-      }));
+      markUpToDate(agent.getInfo().version, APP_VERSION);
     }
   }, []);
 
