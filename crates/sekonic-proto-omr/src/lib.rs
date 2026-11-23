@@ -98,23 +98,26 @@ mod tests {
 
     #[test]
     fn test_decode_md_16_level_and_binary() {
-        // 16-level density (`RM1,3` -> `'0'..='?'` / `'A'..='F'`):
-        // SekOku `cl > 4` rule: levels 0..=4 stay below 48 (`0..=32`), levels 5..=15 map to `85..=255`.
-        // Also verifies 48-sensor rows truncate cleanly to 46-column schema without shifting!
+        // 17-value density (`RM1,3` -> `'0'..='@'` -> `0..=16`, plus `'A'..='F'` -> `10..=15`):
+        // SekOku `cl > 4` rule: levels 0..=4 stay below 48 (`0..=32`), levels 5..=16 map strictly
+        // monotonically to `80..=245` (`'@'` = 16 -> 245 > `'?'` = 15 -> 230).
+        // Also verifies 48-sensor rows truncate cleanly to schema cols without shifting!
         let mut dst = vec![0u8; 6];
-        OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(
-            b"MD0000045XX,9?FYY",
+        let (obs_rows, right_timing) = OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(
+            b"MD00@@045XX,9?@YY",
             &mut dst,
             2,
             3,
             true,
         );
-        assert_eq!(dst, vec![0, 32, 85, 153, 255, 255]);
+        assert_eq!(obs_rows, 2);
+        assert!(!right_timing);
+        assert_eq!(dst, vec![0, 32, 80, 140, 230, 245]);
 
         // Blank sheet in 16-level mode (`max_level == 1` noise) must NOT turn into binary 220!
         let mut dst_blank = vec![0u8; 4];
         OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(
-            b"MD000001,10",
+            b"MD00@@01,10",
             &mut dst_blank,
             2,
             2,
@@ -132,5 +135,35 @@ mod tests {
             false,
         );
         assert_eq!(dst_bin, vec![0, 220, 220, 0]);
+    }
+
+    #[test]
+    fn test_sr6000_status_codes_and_reversed_sheet_detection() {
+        use super::status_decoder::HardwareCondition;
+
+        // Verified against real SR-6000 capture (`SFQ1@@`, `BRP1@@`, `HUP1@@`, `CE00@@`)
+        assert_eq!(HardwareCondition::from_status_code("00"), HardwareCondition::Ready);
+        assert_eq!(HardwareCondition::from_status_code("@@"), HardwareCondition::Ready);
+        assert_eq!(HardwareCondition::from_status_code("P1"), HardwareCondition::Ready);
+        assert_eq!(HardwareCondition::from_status_code("Q1"), HardwareCondition::HopperEmpty);
+        assert_eq!(HardwareCondition::from_status_code("Q2"), HardwareCondition::DoubleFeed);
+        assert_eq!(HardwareCondition::from_status_code("Q3"), HardwareCondition::SkewError);
+        assert_eq!(HardwareCondition::from_status_code("G1"), HardwareCondition::CoverOpen);
+        assert_eq!(HardwareCondition::from_status_code("H2"), HardwareCondition::PaperJam);
+        assert_eq!(HardwareCondition::from_status_code("R4"), HardwareCondition::TimingMarkError);
+
+        // Simulate a 46-col sheet placed backwards so timing marks `@@@` appear at cols 45..47
+        let row_str = format!("{}@@@", "0".repeat(45));
+        let wire = format!("MD00@@{}", vec![row_str.as_str(); 17].join(","));
+        let mut dst = vec![0u8; 61 * 46];
+        let (obs_rows, right_timing) = OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(
+            wire.as_bytes(),
+            &mut dst,
+            61,
+            46,
+            true,
+        );
+        assert_eq!(obs_rows, 17);
+        assert!(right_timing);
     }
 }

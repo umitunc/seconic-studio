@@ -12,6 +12,7 @@ export interface DesignerField {
   cols: number;
   rows: number;
   color: string;
+  reverseItems?: boolean;
 }
 
 export interface FormTemplate {
@@ -19,6 +20,8 @@ export interface FormTemplate {
   name: string;
   rows: number;
   cols: number;
+  orientation?: 'D' | 'T';
+  markThreshold?: number;
   fields: DesignerField[];
 }
 
@@ -98,20 +101,41 @@ export function saveActiveTemplateId(id: string): void {
   }
 }
 
-export function parseFmtOrBldm(text: string): { rows: number; cols: number; fields: DesignerField[] } | null {
+function splitAlphabetTokens(alphabet: string): string[] {
+  if (alphabet.includes('~')) {
+    const parts = alphabet.split('~');
+    if (parts[parts.length - 1] === '') parts.pop();
+    return parts;
+  }
+  return Array.from(alphabet);
+}
+
+export function parseFmtOrBldm(text: string): {
+  rows: number;
+  cols: number;
+  orientation: 'D' | 'T';
+  markThreshold?: number;
+  fields: DesignerField[];
+} | null {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return null;
   const h = lines[0].split('=');
   const rows = Number(h[0]) || 51;
   const cols = Number(h[1]) || 46;
+  const rawThresh = Number(h[2]);
+  const markThreshold = Number.isFinite(rawThresh) && rawThresh > 0 ? rawThresh : undefined;
   const isReverseMode = (h[3] ?? '').trim().toUpperCase() === 'T';
+  const orientation: 'D' | 'T' = isReverseMode ? 'T' : 'D';
   const fields: DesignerField[] = [];
 
   for (let i = 1; i < lines.length; i++) {
     const p = lines[i].split('=');
     if (p.length < 7) continue;
 
-    const isFmt = p.length >= 9 && (p[4] === 'K' || p[4] === 'H') && (p[5] === 'D' || p[5] === 'Y');
+    const isFmt =
+      p.length >= 9 &&
+      (p[4] === 'K' || p[4] === 'H' || p[4] === 'S') &&
+      (p[5] === 'D' || p[5] === 'Y');
     if (isFmt) {
       const r1 = Math.max(1, Number(p[0]) || 1) - 1;
       const r2 = Math.max(r1 + 1, Number(p[1]) || r1 + 1) - 1;
@@ -120,10 +144,15 @@ export function parseFmtOrBldm(text: string): { rows: number; cols: number; fiel
       const dir = (p[5] === 'Y' ? 'Y' : 'D') as 'D' | 'Y';
       const rawAlphabet = p[6] ?? '';
       const modeFlag = (p[7] ?? '').trim().toUpperCase();
-      const alphabet =
-        isReverseMode && modeFlag.endsWith('2')
-          ? Array.from(rawAlphabet).reverse().join('')
-          : rawAlphabet;
+      // Verified from `SekOku.exe @ 0x4aea09..0x4aedbd` & `0x4af408..0x4af75d`:
+      // When header h[3] == 'T' (180° rotated timing-mark-right form) and field mode ends with '1' or '2',
+      // BOTH option labels and item sequence are reversed!
+      const reverseForT = isReverseMode && (modeFlag.endsWith('1') || modeFlag.endsWith('2'));
+      const alphabet = reverseForT
+        ? rawAlphabet.includes('~')
+          ? `${splitAlphabetTokens(rawAlphabet).reverse().join('~')}~`
+          : Array.from(rawAlphabet).reverse().join('')
+        : rawAlphabet;
       const rawName = (p[8] ?? '').replace(/^\[|\]$/g, '').trim();
 
       if (!rawName || rawName.toLowerCase() === 'boş' || alphabet.trim() === '') {
@@ -134,7 +163,7 @@ export function parseFmtOrBldm(text: string): { rows: number; cols: number; fiel
       const fieldType: DesignerField['fieldType'] =
         lower.includes('kitap')
           ? 'booklet_type'
-          : dir === 'D' || lower.includes('no') || lower.includes('tc') || lower.includes('ad') || lower.includes('kimlik')
+          : dir === 'D' || p[4] === 'S' || lower.includes('no') || lower.includes('tc') || lower.includes('ad') || lower.includes('kimlik')
             ? 'student_id'
             : 'subject_questions';
 
@@ -150,6 +179,7 @@ export function parseFmtOrBldm(text: string): { rows: number; cols: number; fiel
         cols: c2 - c1 + 1,
         rows: r2 - r1 + 1,
         color: FIELD_COLORS[fields.length % FIELD_COLORS.length],
+        reverseItems: reverseForT,
       });
     } else {
       const r1 = Math.max(1, Number(p[1]) || 1) - 1;
@@ -171,7 +201,7 @@ export function parseFmtOrBldm(text: string): { rows: number; cols: number; fiel
       });
     }
   }
-  return { rows, cols, fields };
+  return { rows, cols, orientation, markThreshold, fields };
 }
 
 /**
@@ -189,7 +219,7 @@ export function templateToOmrSchema(
   const usedKeys = new Set<string>();
 
   const fields = tpl.fields.map((f, idx) => {
-    let baseKey = (f.key || `field_${idx + 1}`).trim() || `field_${idx + 1}`;
+    const baseKey = (f.key || `field_${idx + 1}`).trim() || `field_${idx + 1}`;
     let uniqueKey = baseKey;
     let suffix = 2;
     while (usedKeys.has(uniqueKey)) {
@@ -197,7 +227,7 @@ export function templateToOmrSchema(
     }
     usedKeys.add(uniqueKey);
 
-    const alphaChars = Array.from(f.alphabet || 'ABCDE');
+    const alphaTokens = splitAlphabetTokens(f.alphabet || 'ABCDE');
     const items: Array<{ index: number; options: Array<{ label: string; row: number; col: number }> }> = [];
 
     if (f.direction === 'D') {
@@ -210,7 +240,7 @@ export function templateToOmrSchema(
           const row = f.startRow + r;
           if (row < 0 || row >= maxRows) continue;
           options.push({
-            label: alphaChars[r] ?? String(r),
+            label: alphaTokens[r] ?? String(r),
             row,
             col,
           });
@@ -229,7 +259,7 @@ export function templateToOmrSchema(
           const col = f.startCol + c;
           if (col < 0 || col >= maxCols) continue;
           options.push({
-            label: alphaChars[c] ?? String.fromCharCode(65 + (c % 26)),
+            label: alphaTokens[c] ?? String.fromCharCode(65 + (c % 26)),
             row,
             col,
           });
@@ -238,6 +268,13 @@ export function templateToOmrSchema(
           items.push({ index: r + 1, options });
         }
       }
+    }
+
+    if (f.reverseItems && items.length > 1) {
+      items.reverse();
+      items.forEach((it, i) => {
+        it.index = i + 1;
+      });
     }
 
     return {
@@ -255,6 +292,12 @@ export function templateToOmrSchema(
   const dropout_color =
     colorLower === 'red' || colorLower === 'green' || colorLower === 'blue' ? colorLower : 'none';
 
+  // Honor `.fmt` header mark threshold (`03` vs `04`) when user kept default minMarkDensity (48).
+  const effectiveMinDensity =
+    policy.minMarkDensity === 48 && tpl.markThreshold !== undefined && tpl.markThreshold <= 3
+      ? Math.max(12, tpl.markThreshold * 8 + 4)
+      : policy.minMarkDensity;
+
   return {
     schema_version: 1,
     form_id: tpl.id || 'CUSTOM-FORM',
@@ -270,7 +313,7 @@ export function templateToOmrSchema(
       height_mm: 297.0,
     },
     threshold_policy: {
-      min_mark_density: policy.minMarkDensity,
+      min_mark_density: effectiveMinDensity,
       strong_mark_density: policy.strongMarkDensity,
       erasure_ratio: policy.erasureRatio,
       review_confidence_floor: policy.confidenceFloor,
@@ -278,4 +321,3 @@ export function templateToOmrSchema(
     fields,
   };
 }
-

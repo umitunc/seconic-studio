@@ -169,6 +169,7 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
             }
         }
     }
+    driver.finish_scan().await;
 }
 
 #[tauri::command]

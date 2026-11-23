@@ -42,6 +42,8 @@ export const LiveScanGrid: React.FC<LiveScanGridProps> = ({
           { value: 'Silgi Kurtarıldı', label: 'Silgi Kurtarıldı', bg: '#fef3c7', fg: '#b45309', darkBg: 'rgba(245,158,11,0.2)', darkFg: '#fcd34d' },
           { value: 'Çift İşaret', label: 'Çift İşaret', bg: '#ffedd5', fg: '#c2410c', darkBg: 'rgba(249,115,22,0.2)', darkFg: '#fdba74' },
           { value: 'Kayıtsız', label: 'Kayıtsız', bg: '#fee2e2', fg: '#b91c1c', darkBg: 'rgba(239,68,68,0.22)', darkFg: '#fca5a5' },
+          { value: 'Ters Yön', label: 'Ters Yön', bg: '#fee2e2', fg: '#b91c1c', darkBg: 'rgba(239,68,68,0.25)', darkFg: '#fca5a5' },
+          { value: 'Çizgi Hatası', label: 'Çizgi Hatası', bg: '#fee2e2', fg: '#b91c1c', darkBg: 'rgba(239,68,68,0.25)', darkFg: '#fca5a5' },
         ],
       },
       { id: 'answersSummary', title: 'Cevap Özeti', type: 'text', width: 200 },

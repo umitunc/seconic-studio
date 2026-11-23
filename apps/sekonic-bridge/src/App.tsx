@@ -31,7 +31,7 @@ import {
 } from './services/localAgentClient';
 
 declare const __APP_VERSION__: string;
-const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.2.8';
+const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.3.2';
 import { ScannedRow, ThresholdPolicy } from './types/scanner';
 import {
   FormTemplate,
@@ -85,6 +85,10 @@ function mapRawSheetToRow(parsed: RawGradedSheet, template?: FormTemplate | null
         .join('')
     : Object.values(answersMap).join('');
 
+  const warnings = parsed.warnings ?? [];
+  const hasRightTiming = warnings.includes('kağıt_ters_yön_sağ_referans');
+  const hasRowMismatch = warnings.some((w) => w.startsWith('okuma_çizgisi_uyumsuz:'));
+
   return {
     id: parsed.seq_no,
     seqNo: parsed.seq_no,
@@ -92,15 +96,20 @@ function mapRawSheetToRow(parsed: RawGradedSheet, template?: FormTemplate | null
     studentName,
     booklet,
     stacker: parsed.missing_required_field ? 'sub' : 'main',
-    confidence: parsed.needs_operator_review ? 72 : 98,
-    status: parsed.missing_required_field
-      ? 'Kayıtsız'
-      : (parsed.warnings?.length ?? 0) > 0
-        ? 'Silgi Kurtarıldı'
-        : 'Tamam',
+    confidence: hasRightTiming || hasRowMismatch ? 25 : parsed.needs_operator_review ? 72 : 98,
+    status: hasRightTiming
+      ? 'Ters Yön'
+      : hasRowMismatch
+        ? 'Çizgi Hatası'
+        : parsed.missing_required_field
+          ? 'Kayıtsız'
+          : warnings.length > 0
+            ? 'Silgi Kurtarıldı'
+            : 'Tamam',
     answersSummary,
     decodedFields: decoded,
     answers: answersMap,
+    warnings,
     rawMatrixB64: parsed.raw_matrix_b64 ?? '',
     rawWireSample: parsed.raw_wire_sample,
   };
@@ -247,6 +256,8 @@ export const App: React.FC = () => {
         name,
         rows: parsed.rows,
         cols: parsed.cols,
+        orientation: parsed.orientation,
+        markThreshold: parsed.markThreshold,
         fields: parsed.fields,
       };
       setTemplates((prev) => [nextTpl, ...prev]);
@@ -262,7 +273,7 @@ export const App: React.FC = () => {
   const [policy, setPolicy] = useState<ThresholdPolicy>({
     minMarkDensity: 48,
     strongMarkDensity: 115,
-    erasureRatio: 0.42,
+    erasureRatio: 0.82,
     confidenceFloor: 0.65,
   });
   const [hwSettings, setHwSettings] = useState<HardwareSettings>({
@@ -452,6 +463,20 @@ export const App: React.FC = () => {
         const row = mapRawSheetToRow(parsed, activeTemplateRef.current);
         setRows((prev) => [row, ...prev]);
         setSelectedRow((cur) => cur ?? row);
+        const w = parsed.warnings ?? [];
+        if (w.includes('kağıt_ters_yön_sağ_referans')) {
+          setErrorMsg(
+            'Kağıt ters yerleştirilmiş: Referans çizgileri sağ kenarda algılandı. Kağıtları referans çizgileri sol kenara gelecek şekilde yerleştirin.',
+          );
+        } else {
+          const mismatch = w.find((item) => item.startsWith('okuma_çizgisi_uyumsuz:'));
+          if (mismatch) {
+            const counts = mismatch.split(':')[1] ?? '';
+            setErrorMsg(
+              `Okuma çizgisi sayısı uyuşmuyor (${counts}). Kağıt yönünü veya seçili şablonu kontrol edin.`,
+            );
+          }
+        }
       },
       onScannerError: (msg) => {
         setErrorMsg(msg);
@@ -664,6 +689,8 @@ export const App: React.FC = () => {
       const tokens = body.includes(',') ? body.split(',').filter(Boolean) : [];
       return {
         seqNo: r.seqNo,
+        status: r.status,
+        warnings: r.warnings,
         studentId: r.studentId,
         studentName: r.studentName,
         booklet: r.booklet,

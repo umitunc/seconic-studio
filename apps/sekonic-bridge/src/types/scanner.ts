@@ -1,5 +1,11 @@
 export type StackerRoute = 'main' | 'sub';
-export type SheetStatus = 'Tamam' | 'Silgi Kurtarıldı' | 'Çift İşaret' | 'Kayıtsız';
+export type SheetStatus =
+  | 'Tamam'
+  | 'Silgi Kurtarıldı'
+  | 'Çift İşaret'
+  | 'Kayıtsız'
+  | 'Ters Yön'
+  | 'Çizgi Hatası';
 
 export interface QuestionDetail {
   q: number;
@@ -21,6 +27,7 @@ export interface ScannedRow {
   answersSummary: string;
   decodedFields?: Record<string, string>;
   answers?: Record<string, string>;
+  warnings?: string[];
   questionDetails?: QuestionDetail[];
   rawMatrixB64: string;
   rawWireSample?: string;
