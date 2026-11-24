@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Cpu, Download, FileText, Gauge, RefreshCw, ShieldCheck, AlertTriangle, Upload, Search, ChevronDown, Check, X, Loader2 } from 'lucide-react';
+import { Cpu, Download, FileText, Gauge, RefreshCw, ShieldCheck, AlertTriangle, Upload, Search, ChevronDown, Check, X, Loader2, HelpCircle } from 'lucide-react';
 import { AgentInfo, AgentUpdateInfo, ScanPhase } from '../../services/localAgentClient';
 import { FormTemplate } from '../../utils/formTemplates';
 
@@ -71,6 +71,7 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
   const [tplOpen, setTplOpen] = useState(false);
   const [tplQuery, setTplQuery] = useState('');
   const [highlightIdx, setHighlightIdx] = useState(0);
+  const [showOrientationHelp, setShowOrientationHelp] = useState(true);
 
   const filteredTemplates = useMemo(() => {
     const q = tplQuery.trim().toLocaleLowerCase('tr-TR');
@@ -368,7 +369,25 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
               <span>{activeTemplate.fields.length} alan</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <span style={{ fontSize: 11, color: 'var(--uxigl-text-muted)' }}>Şerit / Okuma Yönü</span>
+              <span style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span>Şerit / Okuma Yönü</span>
+                <button
+                  type="button"
+                  onClick={() => setShowOrientationHelp((v) => !v)}
+                  title="Şerit yönü ve kağıt yerleştirme rehberini göster/gizle"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    color: showOrientationHelp ? '#38bdf8' : 'var(--uxigl-text-muted)',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                  }}
+                >
+                  <HelpCircle size={13} />
+                </button>
+              </span>
               <select
                 className="uxigl-select"
                 disabled={scanning}
@@ -381,19 +400,156 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                 <option value="T">Sağ Şerit • Ters (T - 180°)</option>
               </select>
             </div>
-            {activeTemplate.orientation === 'T' && (
+            {showOrientationHelp && (
               <div
                 style={{
-                  fontSize: 10.5,
-                  lineHeight: 1.35,
-                  color: '#d97706',
-                  background: 'rgba(245, 158, 11, 0.12)',
-                  border: '1px solid rgba(245, 158, 11, 0.3)',
-                  borderRadius: 6,
-                  padding: '5px 7px',
+                  marginTop: 4,
+                  padding: '8px 9px',
+                  borderRadius: 8,
+                  border: '1px solid var(--uxigl-border)',
+                  background: 'rgba(56, 189, 248, 0.06)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 7,
                 }}
               >
-                Sağ şeritli form: Siyah okuma şeritleri <strong>sol kenara</strong> gelecek şekilde kağıtları 180° baş aşağı yerleştirin.
+                <div style={{ fontSize: 10.5, lineHeight: 1.38, color: 'var(--uxigl-text-muted)' }}>
+                  Cihazın siyah şerit sensörü <strong style={{ color: 'var(--uxigl-text)' }}>sol taraftadır</strong>. Kağıdı tepsiye koyarken şeritler daima{' '}
+                  <strong style={{ color: '#0284c7' }}>sol kenara</strong> gelmelidir:
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  {/* Sol Şerit • Düz (D) Görseli */}
+                  <button
+                    type="button"
+                    disabled={scanning}
+                    onClick={() => onChangeTemplateOrientation?.('D')}
+                    style={{
+                      textAlign: 'left',
+                      padding: '6px',
+                      borderRadius: 7,
+                      cursor: scanning ? 'default' : 'pointer',
+                      border:
+                        activeTemplate.orientation !== 'T'
+                          ? '1.5px solid #0ea5e9'
+                          : '1px solid var(--uxigl-border)',
+                      background:
+                        activeTemplate.orientation !== 'T'
+                          ? 'rgba(14, 165, 233, 0.12)'
+                          : 'rgba(148, 163, 184, 0.06)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4,
+                      color: 'inherit',
+                    }}
+                  >
+                    <svg width="88" height="72" viewBox="0 0 88 72" aria-label="Sol şerit düz form yerleşimi">
+                      {/* Sensör işareti */}
+                      <rect x="2" y="10" width="4" height="54" rx="2" fill="#0ea5e9" opacity="0.3" />
+                      {/* Kağıt */}
+                      <rect x="10" y="10" width="54" height="58" rx="3" fill="#ffffff" stroke="#94a3b8" strokeWidth="1.2" />
+                      {/* Sol tarafta siyah okuma şeritleri */}
+                      {[14, 20, 26, 32, 38, 44, 50, 56, 62].map((y) => (
+                        <rect key={y} x="13" y={y} width="4.5" height="3" rx="0.6" fill="#0f172a" />
+                      ))}
+                      {/* Düz başlık ve baloncuklar */}
+                      <rect x="21" y="15" width="38" height="5" rx="1" fill="#e11d48" opacity="0.82" />
+                      <text x="40" y="19" textAnchor="middle" fontSize="4.5" fontWeight="700" fill="#ffffff">
+                        AD SOYAD
+                      </text>
+                      {[25, 31, 37, 43, 49, 55].map((y, idx) => (
+                        <g key={y}>
+                          <circle cx="24" cy={y} r="1.7" fill={idx % 2 === 0 ? '#0f172a' : '#cbd5e1'} />
+                          <circle cx="30" cy={y} r="1.7" fill="#cbd5e1" />
+                          <circle cx="36" cy={y} r="1.7" fill={idx % 2 === 1 ? '#0f172a' : '#cbd5e1'} />
+                          <circle cx="46" cy={y} r="1.7" fill="#cbd5e1" />
+                          <circle cx="52" cy={y} r="1.7" fill={idx === 2 ? '#0f172a' : '#cbd5e1'} />
+                          <circle cx="58" cy={y} r="1.7" fill="#cbd5e1" />
+                        </g>
+                      ))}
+                      {/* Giriş yönü oku */}
+                      <path d="M74 56 L74 18 M70 23 L74 17 L78 23" stroke="#10b981" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      <text x="74" y="66" textAnchor="middle" fontSize="6" fontWeight="700" fill="#10b981">
+                        GİRİŞ
+                      </text>
+                    </svg>
+                    <div style={{ fontSize: 10, fontWeight: 700, textAlign: 'center' }}>
+                      Düz (D) • Sol Şerit
+                    </div>
+                    <div style={{ fontSize: 9.5, color: 'var(--uxigl-text-muted)', textAlign: 'center', lineHeight: 1.25 }}>
+                      Yazılar düz, siyah şeritler solda okutulur.
+                    </div>
+                  </button>
+
+                  {/* Sağ Şerit • Ters (T - 180°) Görseli */}
+                  <button
+                    type="button"
+                    disabled={scanning}
+                    onClick={() => onChangeTemplateOrientation?.('T')}
+                    style={{
+                      textAlign: 'left',
+                      padding: '6px',
+                      borderRadius: 7,
+                      cursor: scanning ? 'default' : 'pointer',
+                      border:
+                        activeTemplate.orientation === 'T'
+                          ? '1.5px solid #f59e0b'
+                          : '1px solid var(--uxigl-border)',
+                      background:
+                        activeTemplate.orientation === 'T'
+                          ? 'rgba(245, 158, 11, 0.13)'
+                          : 'rgba(148, 163, 184, 0.06)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 4,
+                      color: 'inherit',
+                    }}
+                  >
+                    <svg width="88" height="72" viewBox="0 0 88 72" aria-label="Sağ şerit ters form yerleşimi">
+                      {/* Sensör işareti */}
+                      <rect x="2" y="10" width="4" height="54" rx="2" fill="#f59e0b" opacity="0.35" />
+                      {/* 180° çevrilmiş kağıt */}
+                      <rect x="10" y="10" width="54" height="58" rx="3" fill="#ffffff" stroke="#94a3b8" strokeWidth="1.2" />
+                      {/* Çevrildiği için sola gelen siyah şeritler */}
+                      {[14, 20, 26, 32, 38, 44, 50, 56, 62].map((y) => (
+                        <rect key={y} x="13" y={y} width="4.5" height="3" rx="0.6" fill="#0f172a" />
+                      ))}
+                      {/* Baş aşağı duran başlık (180° döndürülmüş) */}
+                      <rect x="21" y="58" width="38" height="5" rx="1" fill="#e11d48" opacity="0.82" />
+                      <g transform="rotate(180 40 60.5)">
+                        <text x="40" y="62.2" textAnchor="middle" fontSize="4.5" fontWeight="700" fill="#ffffff">
+                          AD SOYAD
+                        </text>
+                      </g>
+                      {[17, 23, 29, 35, 41, 47].map((y, idx) => (
+                        <g key={y}>
+                          <circle cx="24" cy={y} r="1.7" fill={idx === 1 ? '#0f172a' : '#cbd5e1'} />
+                          <circle cx="30" cy={y} r="1.7" fill="#cbd5e1" />
+                          <circle cx="36" cy={y} r="1.7" fill={idx % 2 === 0 ? '#0f172a' : '#cbd5e1'} />
+                          <circle cx="46" cy={y} r="1.7" fill="#cbd5e1" />
+                          <circle cx="52" cy={y} r="1.7" fill={idx % 2 === 1 ? '#0f172a' : '#cbd5e1'} />
+                          <circle cx="58" cy={y} r="1.7" fill="#cbd5e1" />
+                        </g>
+                      ))}
+                      {/* 180° çevirme + giriş oku */}
+                      <text x="74" y="16" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="#d97706">
+                        180°
+                      </text>
+                      <path d="M74 56 L74 23 M70 28 L74 22 L78 28" stroke="#10b981" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                      <text x="74" y="66" textAnchor="middle" fontSize="6" fontWeight="700" fill="#10b981">
+                        GİRİŞ
+                      </text>
+                    </svg>
+                    <div style={{ fontSize: 10, fontWeight: 700, textAlign: 'center' }}>
+                      Ters (T) • Sağ Şerit
+                    </div>
+                    <div style={{ fontSize: 9.5, color: 'var(--uxigl-text-muted)', textAlign: 'center', lineHeight: 1.25 }}>
+                      Şerit sağda basılıdır; 180° baş aşağı konur.
+                    </div>
+                  </button>
+                </div>
               </div>
             )}
           </>
