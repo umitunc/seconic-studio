@@ -2,6 +2,7 @@ use crate::paper_generator::GeneratedSheet;
 use sekonic_schema::form_schema::SheetSide;
 use sekonic_transport::memory_channel::InMemoryDeviceEnd;
 use std::collections::VecDeque;
+use std::time::Duration;
 
 const STX: u8 = 0x02;
 const ACK: u8 = 0x06;
@@ -36,6 +37,7 @@ pub struct VirtualSr6500 {
     pub main_stacker: Vec<u64>,
     pub sub_stacker: Vec<u64>,
     pub model_name: &'static str,
+    pub feed_delay: Duration,
 }
 
 impl VirtualSr6500 {
@@ -46,7 +48,13 @@ impl VirtualSr6500 {
             main_stacker: Vec::new(),
             sub_stacker: Vec::new(),
             model_name: "SR-6500",
+            feed_delay: Duration::ZERO,
         }
+    }
+
+    pub fn with_feed_delay(mut self, delay: Duration) -> Self {
+        self.feed_delay = delay;
+        self
     }
 
     pub async fn run(mut self, dev: InMemoryDeviceEnd) -> Self {
@@ -69,6 +77,10 @@ impl VirtualSr6500 {
 
             let cmd = String::from_utf8_lossy(&frame[3..3 + payload_len]).to_string();
             let _ = dev.send_to_host(vec![ACK]).await;
+
+            if cmd == "SF" && !self.feed_delay.is_zero() && !self.hopper.is_empty() {
+                tokio::time::sleep(self.feed_delay).await;
+            }
 
             if let Some(resp) = self.handle_command(&cmd) {
                 let _ = dev.send_to_host(resp).await;

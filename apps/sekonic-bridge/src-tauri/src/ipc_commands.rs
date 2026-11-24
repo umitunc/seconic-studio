@@ -187,10 +187,12 @@ pub fn start_scan(
     let schema = default_runtime_schema();
 
     if simulator_mode {
-        let sheets: Vec<_> = (1..=50u64)
+        let sheets: Vec<_> = (1..=25u64)
             .map(|i| {
                 let scen = if i % 10 == 0 {
                     SheetScenario::InvalidStudentId
+                } else if i % 7 == 0 {
+                    SheetScenario::WithMultiMarks
                 } else if i % 4 == 1 {
                     SheetScenario::WithErasures
                 } else {
@@ -200,7 +202,11 @@ pub fn start_scan(
             })
             .collect();
         let (host_tx, dev_rx) = InMemoryTransport::pair(16);
-        tauri::async_runtime::spawn(VirtualSr6500::new(sheets).run(dev_rx));
+        tauri::async_runtime::spawn(
+            VirtualSr6500::new(sheets)
+                .with_feed_delay(std::time::Duration::from_millis(450))
+                .run(dev_rx),
+        );
         let driver = OmrScannerDriver::new(host_tx);
         tauri::async_runtime::spawn(run_driver_loop(driver, schema, st, app));
         return Ok(true);
