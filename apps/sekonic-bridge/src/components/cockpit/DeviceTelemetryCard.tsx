@@ -600,12 +600,14 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
         <div className="uxigl-subcard" style={{ padding: 8 }}>
           <div style={{ color: 'var(--uxigl-text-muted)' }}>Okuma Hızı</div>
           <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Gauge size={14} color="#10b981" /> {scanning ? '108 kağıt/dk' : '0 kağıt/dk'}
+            <Gauge size={14} color="#10b981" /> {scanning ? (simulatorMode ? '133 kağıt/dk' : '108 kağıt/dk') : '0 kağıt/dk'}
           </div>
         </div>
         <div className="uxigl-subcard" style={{ padding: 8 }}>
           <div style={{ color: 'var(--uxigl-text-muted)' }}>Hopper</div>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>Dolu</div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>
+            {scanning ? 'Okunuyor' : 'Hazır'}
+          </div>
         </div>
       </div>
 

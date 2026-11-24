@@ -832,6 +832,8 @@ export const App: React.FC = () => {
               />
               <SheetCanvasPreview
                 row={selectedRow}
+                rows={activeTemplate?.rows ?? 24}
+                cols={activeTemplate?.cols ?? 10}
                 theme={theme}
                 onOpenReview={() => {
                   if (selectedRow) setReviewRow(selectedRow);
@@ -928,6 +930,8 @@ export const App: React.FC = () => {
 
       <HeatmapReviewModal
         row={reviewRow}
+        rows={activeTemplate?.rows ?? 24}
+        cols={activeTemplate?.cols ?? 10}
         theme={theme}
         onClose={() => setReviewRow(null)}
         onResolveAnswer={(rowId) => {

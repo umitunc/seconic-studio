@@ -43,7 +43,7 @@ export const DEFAULT_TEMPLATES: FormTemplate[] = [
       { id: 'f1', key: 'ogrenci_no', label: 'ÖĞRENCİ NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startCol: 1, startRow: 9, cols: 5, rows: 10, color: FIELD_COLORS[0] },
       { id: 'f2', key: 'tc_kimlik', label: 'T.C. KİMLİK NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startCol: 12, startRow: 9, cols: 11, rows: 10, color: FIELD_COLORS[3] },
       { id: 'f3', key: 'adi_soyadi', label: 'ADI SOYADI', fieldType: 'student_id', direction: 'D', alphabet: 'ABCÇDEFGĞHIİJKLMNOÖPRSŞTUÜVYZ', startCol: 1, startRow: 22, cols: 22, rows: 29, color: FIELD_COLORS[2] },
-      { id: 'f4', key: 'sorular', label: 'SORULAR', fieldType: 'subject_questions', direction: 'Y', alphabet: '12345', startCol: 41, startRow: 1, cols: 5, rows: 50, color: FIELD_COLORS[1] },
+      { id: 'f4', key: 'sorular', label: 'SORULAR', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startCol: 41, startRow: 1, cols: 5, rows: 50, color: FIELD_COLORS[1] },
     ],
   },
   {
@@ -67,7 +67,18 @@ export function loadTemplates(): FormTemplate[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as FormTemplate[];
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((tpl) =>
+          tpl.id === 'tpl_default_bes_faktor'
+            ? {
+                ...tpl,
+                fields: tpl.fields.map((f) =>
+                  f.id === 'f4' && f.alphabet === '12345' ? { ...f, alphabet: 'ABCDE' } : f,
+                ),
+              }
+            : tpl,
+        );
+      }
     }
   } catch {
     // ignore

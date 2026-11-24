@@ -4,18 +4,26 @@ import { ScannedRow } from '../../types/scanner';
 
 interface SheetCanvasPreviewProps {
   row: ScannedRow | null;
+  rows?: number;
+  cols?: number;
   theme: 'light' | 'dark';
   onOpenReview: () => void;
 }
 
-export const SheetCanvasPreview: React.FC<SheetCanvasPreviewProps> = ({ row, theme, onOpenReview }) => {
+export const SheetCanvasPreview: React.FC<SheetCanvasPreviewProps> = ({
+  row,
+  rows = 24,
+  cols = 10,
+  theme,
+  onOpenReview,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     if (canvasRef.current && row) {
-      renderSheetHeatmapCanvas(canvasRef.current, row.rawMatrixB64, 24, 10, 48, 115, theme);
+      renderSheetHeatmapCanvas(canvasRef.current, row.rawMatrixB64, rows, cols, 48, 115, theme);
     }
-  }, [row, theme]);
+  }, [row, rows, cols, theme]);
 
   return (
     <div className="uxigl-glass-card" style={{ padding: 14, flex: 1, display: 'flex', flexDirection: 'column', gap: 10 }}>

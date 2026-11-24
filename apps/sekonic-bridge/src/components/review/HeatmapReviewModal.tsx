@@ -6,6 +6,8 @@ import { DensityBarChart } from './DensityBarChart';
 
 interface HeatmapReviewModalProps {
   row: ScannedRow | null;
+  rows?: number;
+  cols?: number;
   theme: 'light' | 'dark';
   onClose: () => void;
   onResolveAnswer: (rowId: number, option: string) => void;
@@ -14,6 +16,8 @@ interface HeatmapReviewModalProps {
 
 export const HeatmapReviewModal: React.FC<HeatmapReviewModalProps> = ({
   row,
+  rows = 24,
+  cols = 10,
   theme,
   onClose,
   onResolveAnswer,
@@ -37,9 +41,9 @@ export const HeatmapReviewModal: React.FC<HeatmapReviewModalProps> = ({
 
   useEffect(() => {
     if (canvasRef.current && row) {
-      renderSheetHeatmapCanvas(canvasRef.current, row.rawMatrixB64, 24, 10, 48, 115, theme);
+      renderSheetHeatmapCanvas(canvasRef.current, row.rawMatrixB64, rows, cols, 48, 115, theme);
     }
-  }, [row, theme]);
+  }, [row, rows, cols, theme]);
 
   useEffect(() => {
     if (!row) return;
