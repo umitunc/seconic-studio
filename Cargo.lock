@@ -516,7 +516,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sekonic-agent"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "futures-util",
  "sekonic-grader",
@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "sekonic-grader"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "base64",
  "sekonic-schema",
@@ -541,7 +541,7 @@ dependencies = [
 
 [[package]]
 name = "sekonic-proto-cis"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "bytes",
  "sekonic-schema",
@@ -553,7 +553,7 @@ dependencies = [
 
 [[package]]
 name = "sekonic-proto-omr"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "bytes",
  "sekonic-schema",
@@ -565,7 +565,7 @@ dependencies = [
 
 [[package]]
 name = "sekonic-schema"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -574,7 +574,7 @@ dependencies = [
 
 [[package]]
 name = "sekonic-sim"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "bytes",
  "sekonic-schema",
@@ -584,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "sekonic-sync"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "futures-util",
  "rusqlite",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "sekonic-transport"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "async-trait",
  "bytes",
