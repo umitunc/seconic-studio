@@ -2,6 +2,30 @@ use crate::error::SekonicError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum FormOrientation {
+    /// `D` (Düz): Timing stripes are on the left edge when the sheet is held upright.
+    #[default]
+    #[serde(rename = "D", alias = "straight")]
+    Straight,
+    /// `T` (Ters): Timing stripes are printed on the right edge when upright, so the sheet
+    /// is fed 180° rotated (upside-down) to place stripes under the left timing sensor.
+    #[serde(rename = "T", alias = "reversed_180")]
+    Reversed180,
+}
+
+fn default_multi_mark_char() -> String {
+    "*".to_string()
+}
+
+fn default_blank_char() -> String {
+    " ".to_string()
+}
+
+fn default_saturation_density() -> Option<u8> {
+    Some(135)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OmrFormSchema {
     pub schema_version: u32,
@@ -9,6 +33,12 @@ pub struct OmrFormSchema {
     pub form_name: String,
     pub duplex: bool,
     pub dropout_color: DropoutColor,
+    #[serde(default)]
+    pub orientation: FormOrientation,
+    #[serde(default = "default_multi_mark_char")]
+    pub multi_mark_char: String,
+    #[serde(default = "default_blank_char")]
+    pub blank_char: String,
     pub grid: GridGeometry,
     pub threshold_policy: ThresholdPolicy,
     pub fields: Vec<FieldDefinition>,
@@ -39,6 +69,11 @@ pub struct ThresholdPolicy {
     pub strong_mark_density: u8,
     pub erasure_ratio: f32,
     pub review_confidence_floor: f32,
+    /// Matches `SekOku.exe` `Koyuluk Ayarı -> Üst Sınır` (`sekonic.ini` default `9` -> `135`):
+    /// marks at or above this density saturate equally so dual intentional marks (`lvl >= 9`)
+    /// always flag as MultiMark (`*`), while lighter erasures (`lvl 5..8` < `135`) lose to real marks.
+    #[serde(default = "default_saturation_density")]
+    pub saturation_density: Option<u8>,
 }
 
 impl Default for ThresholdPolicy {
@@ -46,11 +81,9 @@ impl Default for ThresholdPolicy {
         Self {
             min_mark_density: 48,
             strong_mark_density: 115,
-            // Matches `SekOku.exe @ 0x4af042..0x4af360`: lighter erasures (levels 5..12)
-            // lose to darker intended marks (levels 15..16), while equal/near-equal dual
-            // dark marks (> 0.82 ratio) are flagged as MultiMark (`*`).
             erasure_ratio: 0.82,
             review_confidence_floor: 0.65,
+            saturation_density: Some(135),
         }
     }
 }
@@ -61,6 +94,12 @@ pub struct FieldDefinition {
     pub field_type: FieldType,
     pub side: SheetSide,
     pub required_for_valid_sheet: bool,
+    #[serde(default)]
+    pub allow_multiple_marks: bool,
+    #[serde(default)]
+    pub hidden_from_output: bool,
+    #[serde(default)]
+    pub route_to_sub_on_multi: bool,
     pub items: Vec<BubbleGroup>,
 }
 

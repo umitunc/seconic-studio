@@ -1,7 +1,7 @@
 use crate::error::SekonicError;
 use crate::form_schema::{
-    BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, GridGeometry,
-    OmrFormSchema, SheetSide, ThresholdPolicy,
+    BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, FormOrientation,
+    GridGeometry, OmrFormSchema, SheetSide, ThresholdPolicy,
 };
 
 /// Parses a legacy Sekonic `.bldm` definition into a modern `OmrFormSchema`.
@@ -79,12 +79,31 @@ pub fn parse_bldm(form_id: &str, content: &str) -> Result<OmrFormSchema, Sekonic
         });
     }
 
+    let orientation = if hparts.get(3).map(|s| s.trim().eq_ignore_ascii_case("T")).unwrap_or(false) {
+        FormOrientation::Reversed180
+    } else {
+        FormOrientation::Straight
+    };
+    let multi_mark_char = hparts
+        .get(4)
+        .filter(|s| !s.is_empty())
+        .map(|s| (*s).to_string())
+        .unwrap_or_else(|| "*".to_string());
+    let blank_char = hparts
+        .get(5)
+        .filter(|s| !s.is_empty())
+        .map(|s| (*s).to_string())
+        .unwrap_or_else(|| " ".to_string());
+
     let schema = OmrFormSchema {
         schema_version: 1,
         form_id: form_id.to_string(),
         form_name: format!("Imported {form_id}"),
         duplex: false,
         dropout_color: DropoutColor::Red,
+        orientation,
+        multi_mark_char,
+        blank_char,
         grid: GridGeometry {
             front_rows,
             front_cols,
@@ -99,6 +118,9 @@ pub fn parse_bldm(form_id: &str, content: &str) -> Result<OmrFormSchema, Sekonic
             field_type: FieldType::CustomCode,
             side: SheetSide::Front,
             required_for_valid_sheet: false,
+            allow_multiple_marks: false,
+            hidden_from_output: false,
+            route_to_sub_on_multi: false,
             items: groups,
         }],
     };

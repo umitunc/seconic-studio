@@ -276,40 +276,66 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
             .max()
             .unwrap_or(0);
         let is_binary = !force_16level && max_level <= 1;
-        // In `SekOku.exe @ 0x4aefd0`, `.fmt` threshold `04` uses strict `>` (`lvl > 4`, so `0..=4` is blank
-        // and `5..=16` is marked). Map `0..=4` -> `0..=32` (< minMarkDensity 48) and `5..=16` -> `80..=245`
-        // strictly monotonically so `'@'` (16 -> 245) > `'?'` (15 -> 230) > ... > `'5'` (5 -> 80).
+        // Matches `SekOku.exe @ 0x4aefd0..0x4af042` + `sekonic.ini` (`Üst Sınır = 9`):
+        // - `0..=4`: `0..=32` (< default `min_mark_density = 48`; `lvl = 4` -> `32 >= 30` when `.fmt` uses `03`)
+        // - `5..=8` (light marks / pencil erasures): `64, 80, 96, 112` (< `saturation_density = 135`)
+        // - `9..=16` (normal/dark marks `>= Üst Sınır 9`): `140..=238` (>= `saturation_density = 135`)
         let to_density = |ch: u8| -> u8 {
             let lvl = Self::decode_md_level(ch);
             if is_binary {
                 if lvl >= 1 { 220 } else { 0 }
             } else if lvl <= 4 {
                 lvl * 8
+            } else if lvl <= 8 {
+                64 + (lvl - 5) * 16
             } else {
-                80u8.saturating_add((lvl - 5).saturating_mul(15))
+                140u8.saturating_add((lvl - 9).saturating_mul(14))
             }
         };
 
         if body.contains(&b',') {
             let tokens: Vec<&[u8]> = body.split(|&b| b == b',').filter(|t| !t.is_empty()).collect();
             let observed_rows = u16::try_from(tokens.len()).unwrap_or(u16::MAX);
-            let mut right_edge_hits = 0usize;
-            for (r, row_bits) in tokens.iter().enumerate() {
-                if row_bits.len() >= 48
-                    && Self::decode_md_level(row_bits[46]) >= 10
-                    && Self::decode_md_level(row_bits[47]) >= 10
-                {
-                    right_edge_hits += 1;
-                }
-                if r < r_max {
-                    for (c, &ch) in row_bits.iter().take(c_max).enumerate() {
-                        dst[r * c_max + c] = to_density(ch);
+
+            // On SR-6000 (`NC1,48`), 210mm A4 paper covers channels `0..44`; uncovered rightmost
+            // channels (`45..47`) sit over the black scanner platen outside the right edge of the
+            // paper and read dark (`12..16`) on every single row with zero white-paper rows.
+            // Scan strictly inward from channel 47 and stop at the first channel that sees paper.
+            let mut platen_mask = [false; 48];
+            if tokens.len() >= 15 {
+                for ch_idx in (43..48).rev() {
+                    let mut white_rows = 0usize;
+                    let mut dark_rows = 0usize;
+                    for row in &tokens {
+                        if let Some(&b) = row.get(ch_idx) {
+                            let lvl = Self::decode_md_level(b);
+                            if lvl <= 4 {
+                                white_rows += 1;
+                            } else if lvl >= 11 {
+                                dark_rows += 1;
+                            }
+                        }
+                    }
+                    if white_rows == 0 && dark_rows * 100 >= tokens.len() * 92 {
+                        platen_mask[ch_idx] = true;
+                    } else {
+                        break;
                     }
                 }
             }
-            let right_edge_timing =
-                cols <= 46 && tokens.len() >= 8 && right_edge_hits * 4 >= tokens.len() * 3;
-            (observed_rows, right_edge_timing)
+
+            for (r, row_bits) in tokens.iter().enumerate() {
+                if r < r_max {
+                    for (c, &ch) in row_bits.iter().take(c_max).enumerate() {
+                        dst[r * c_max + c] = if c < 48 && platen_mask[c] {
+                            0
+                        } else {
+                            to_density(ch)
+                        };
+                    }
+                }
+            }
+            (observed_rows, false)
         } else {
             let src_stride = if c_max < 48 && body.len() >= r_max * 48 {
                 48

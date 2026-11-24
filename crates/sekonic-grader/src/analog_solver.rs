@@ -22,7 +22,8 @@ pub struct BubbleDecision {
     pub densities: Vec<u8>,
 }
 
-/// Computes the 25th percentile paper background baseline $B_{sheet}$ across the front matrix.
+/// Computes the 10th percentile paper background baseline $B_{sheet}$ across the front matrix.
+/// Using the 10th percentile ensures even densely-marked sheets reflect true un-bubbled paper.
 pub fn estimate_sheet_baseline(matrix: &Matrix2D) -> u8 {
     if matrix.front.is_empty() {
         return 0;
@@ -31,7 +32,7 @@ pub fn estimate_sheet_baseline(matrix: &Matrix2D) -> u8 {
     for &v in &matrix.front {
         hist[usize::from(v)] += 1;
     }
-    let target = (matrix.front.len() / 4).max(1) as u32;
+    let target = (matrix.front.len() / 10).max(1) as u32;
     let mut acc = 0u32;
     for (val, &cnt) in hist.iter().enumerate() {
         acc += cnt;
@@ -42,7 +43,11 @@ pub fn estimate_sheet_baseline(matrix: &Matrix2D) -> u8 {
     0
 }
 
-/// Solves a single `BubbleGroup` using Section 3.3 analog 0-255 erasure-aware contrast rules.
+/// Solves a single `BubbleGroup` using `SekOku.exe`-compatible saturation + erasure contrast rules:
+/// - Skips dummy backtick (`` ` ``) placeholder cells (`SekOku.exe @ 0x444de0`).
+/// - Applies optional `saturation_density` (`Koyuluk Üst Sınırı`, default `135` = `MD` level `9`):
+///   if two bubbles both reach saturation (`lvl >= 9`), both clamp to `sat` and produce `MultiMark` (`*`),
+///   whereas a real mark (`>= sat`) cleanly beats a lighter pencil erasure (`< sat`) as `MarkedWithErasure`.
 pub fn solve_bubble_group(
     matrix: &Matrix2D,
     side: SheetSide,
@@ -56,6 +61,9 @@ pub fn solve_bubble_group(
     for opt in &group.options {
         let raw = matrix.get(side, opt.row, opt.col);
         raw_densities.push(raw);
+        if opt.label == "`" {
+            continue;
+        }
         let net = raw.saturating_sub(baseline);
         scored.push((opt.label.as_str(), net));
     }
@@ -106,9 +114,13 @@ pub fn solve_bubble_group(
         };
     }
 
-    let ratio = f32::from(v2) / f32::from(v1.max(1));
-    if v1 >= t_strong && ratio <= policy.erasure_ratio {
-        let conf = (1.0 - ratio).clamp(0.65, 0.95);
+    let sat = policy.saturation_density.unwrap_or(255).max(t_min);
+    let c1 = v1.min(sat);
+    let c2 = v2.min(sat);
+    let clamped_ratio = f32::from(c2) / f32::from(c1.max(1));
+
+    if c1 > c2 && v1 >= t_strong && (v1 >= sat || clamped_ratio <= policy.erasure_ratio) {
+        let conf = (1.0 - clamped_ratio * 0.5).clamp(0.68, 0.95);
         return BubbleDecision {
             index: group.index,
             state: BubbleState::MarkedWithErasure,
@@ -125,7 +137,7 @@ pub fn solve_bubble_group(
         .filter(|(_, v)| *v >= t_min)
         .map(|(lbl, _)| (*lbl).to_string())
         .collect();
-    let conf = ratio.clamp(0.50, 1.0);
+    let conf = clamped_ratio.clamp(0.50, 1.0);
     BubbleDecision {
         index: group.index,
         state: BubbleState::MultiMark,

@@ -12,8 +12,8 @@ mod tests {
     use super::field_decoder::grade_sheet;
     use super::roster_validator::{RosterValidator, StackerDecision, SubStackerReason};
     use sekonic_schema::form_schema::{
-        BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, GridGeometry,
-        OmrFormSchema, SheetSide, ThresholdPolicy,
+        BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, FormOrientation,
+        GridGeometry, OmrFormSchema, SheetSide, ThresholdPolicy,
     };
     use sekonic_schema::raw_capture::{Matrix2D, RawSheetCapture};
     use std::time::Instant;
@@ -41,6 +41,9 @@ mod tests {
             form_name: "LGS Test".into(),
             duplex: false,
             dropout_color: DropoutColor::Red,
+            orientation: FormOrientation::Straight,
+            multi_mark_char: "*".into(),
+            blank_char: " ".into(),
             grid: GridGeometry {
                 front_rows: 32,
                 front_cols: 16,
@@ -56,6 +59,9 @@ mod tests {
                     field_type: FieldType::StudentId,
                     side: SheetSide::Front,
                     required_for_valid_sheet: true,
+                    allow_multiple_marks: false,
+                    hidden_from_output: false,
+                    route_to_sub_on_multi: false,
                     items: vec![BubbleGroup {
                         index: 1,
                         options: (0..4)
@@ -72,6 +78,9 @@ mod tests {
                     field_type: FieldType::SubjectQuestions,
                     side: SheetSide::Front,
                     required_for_valid_sheet: false,
+                    allow_multiple_marks: false,
+                    hidden_from_output: false,
+                    route_to_sub_on_multi: false,
                     items: q_items,
                 },
             ],
@@ -143,5 +152,118 @@ mod tests {
             "10k sheets took {} ms (expected < 500 ms)",
             elapsed.as_millis()
         );
+    }
+
+    #[test]
+    fn test_sekoku_saturation_multi_char_and_c2_multi_select() {
+        // 1. Verify `SekOku.exe` `Üst Sınır = 9` (`saturation_density = 135`) behavior:
+        //    - Two intentional pencil marks (`lvl 11 -> 168` and `lvl 16 -> 238`) both saturate at 135 -> MultiMark (`*`)!
+        //    - One erasure (`lvl 6 -> 80 < 135`) + one real mark (`lvl 15 -> 224 >= 135`) -> MarkedWithErasure!
+        let mut m = Matrix2D::new(4, 6, false);
+        m.set(SheetSide::Front, 0, 0, 168); // lvl 11
+        m.set(SheetSide::Front, 0, 3, 238); // lvl 16 ('@')
+        let grp_q1 = BubbleGroup {
+            index: 1,
+            options: (0..5)
+                .map(|c| BubbleCoord {
+                    label: ((b'A' + c as u8) as char).to_string(),
+                    row: 0,
+                    col: c,
+                })
+                .collect(),
+        };
+        let dec_dual = solve_bubble_group(&m, SheetSide::Front, &grp_q1, 0, &ThresholdPolicy::default());
+        assert_eq!(dec_dual.state, BubbleState::MultiMark);
+
+        m.set(SheetSide::Front, 1, 1, 80);  // lvl 6 erasure on B
+        m.set(SheetSide::Front, 1, 2, 224); // lvl 15 mark on C
+        let grp_q2 = BubbleGroup {
+            index: 2,
+            options: (0..5)
+                .map(|c| BubbleCoord {
+                    label: ((b'A' + c as u8) as char).to_string(),
+                    row: 1,
+                    col: c,
+                })
+                .collect(),
+        };
+        let dec_erase = solve_bubble_group(&m, SheetSide::Front, &grp_q2, 0, &ThresholdPolicy::default());
+        assert_eq!(dec_erase.state, BubbleState::MarkedWithErasure);
+        assert_eq!(dec_erase.value.as_deref(), Some("C"));
+
+        // 2. Verify `C2` (`allow_multiple_marks = true`) & `~` multi-char token width (`01~02~03`):
+        m.set(SheetSide::Front, 2, 0, 196); // A
+        m.set(SheetSide::Front, 2, 3, 210); // D
+        m.set(SheetSide::Front, 3, 1, 210); // "10"
+        let schema = OmrFormSchema {
+            schema_version: 1,
+            form_id: "FMT-C2".into(),
+            form_name: "FMT C2".into(),
+            duplex: false,
+            dropout_color: DropoutColor::Red,
+            orientation: FormOrientation::Reversed180,
+            multi_mark_char: "*".into(),
+            blank_char: " ".into(),
+            grid: GridGeometry {
+                front_rows: 4,
+                front_cols: 6,
+                back_rows: 0,
+                back_cols: 0,
+                width_mm: 210.0,
+                height_mm: 297.0,
+            },
+            threshold_policy: ThresholdPolicy::default(),
+            fields: vec![
+                FieldDefinition {
+                    key: "sinif".into(),
+                    field_type: FieldType::StudentId,
+                    side: SheetSide::Front,
+                    required_for_valid_sheet: false,
+                    allow_multiple_marks: false,
+                    hidden_from_output: false,
+                    route_to_sub_on_multi: false,
+                    items: vec![BubbleGroup {
+                        index: 1,
+                        options: vec![
+                            BubbleCoord { label: "09".into(), row: 3, col: 0 },
+                            BubbleCoord { label: "10".into(), row: 3, col: 1 },
+                            BubbleCoord { label: "11".into(), row: 3, col: 2 },
+                        ],
+                    }],
+                },
+                FieldDefinition {
+                    key: "cevaplar".into(),
+                    field_type: FieldType::SubjectQuestions,
+                    side: SheetSide::Front,
+                    required_for_valid_sheet: false,
+                    allow_multiple_marks: true,
+                    hidden_from_output: false,
+                    route_to_sub_on_multi: false,
+                    items: vec![BubbleGroup {
+                        index: 1,
+                        options: (0..6)
+                            .map(|c| BubbleCoord {
+                                label: ((b'A' + c as u8) as char).to_string(),
+                                row: 2,
+                                col: c,
+                            })
+                            .collect(),
+                    }],
+                },
+            ],
+        };
+        let cap = RawSheetCapture {
+            seq_no: 1,
+            timestamp_ms: 0,
+            barcode: None,
+            matrix: m,
+            raw_wire_sample: None,
+            observed_front_rows: Some(4),
+            right_edge_timing_detected: false,
+        };
+        let graded = grade_sheet(&schema, &cap);
+        assert_eq!(graded.decoded_fields.get("sinif").map(String::as_str), Some("10"));
+        assert_eq!(graded.answers.get("cevaplar").map(String::as_str), Some("AD    "));
+        assert!(!graded.needs_operator_review);
     }
 }

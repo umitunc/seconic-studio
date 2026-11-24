@@ -10,8 +10,8 @@ pub mod image_omr;
 mod tests {
     use super::image_omr::CisScannerDriver;
     use sekonic_schema::form_schema::{
-        BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, GridGeometry,
-        OmrFormSchema, SheetSide, ThresholdPolicy,
+        BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, FormOrientation,
+        GridGeometry, OmrFormSchema, SheetSide, ThresholdPolicy,
     };
     use sekonic_sim::paper_generator::{generate_synthetic_sheet, SheetScenario};
     use sekonic_sim::virtual_sr55d::VirtualSr55d;
@@ -25,6 +25,9 @@ mod tests {
             form_name: "CIS Test".into(),
             duplex: false,
             dropout_color: DropoutColor::Red,
+            orientation: FormOrientation::Straight,
+            multi_mark_char: "*".into(),
+            blank_char: " ".into(),
             grid: GridGeometry {
                 front_rows: 16,
                 front_cols: 10,
@@ -39,6 +42,9 @@ mod tests {
                 field_type: FieldType::SubjectQuestions,
                 side: SheetSide::Front,
                 required_for_valid_sheet: true,
+                allow_multiple_marks: false,
+                hidden_from_output: false,
+                route_to_sub_on_multi: false,
                 items: vec![BubbleGroup {
                     index: 1,
                     options: (0..5)

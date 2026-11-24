@@ -36,6 +36,9 @@ pub fn grade_raw_matrix_json(
         timestamp_ms: 0,
         barcode: None,
         matrix,
+        raw_wire_sample: None,
+        observed_front_rows: None,
+        right_edge_timing_detected: false,
     };
     let graded = grade_sheet(&schema, &cap);
     serde_json::to_string(&graded).map_err(|e| JsValue::from_str(&e.to_string()))

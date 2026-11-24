@@ -11,8 +11,8 @@ mod tests {
     use super::paper_generator::{generate_synthetic_sheet, SheetScenario};
     use super::virtual_sr6500::crc16_omr;
     use sekonic_schema::form_schema::{
-        BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, GridGeometry,
-        OmrFormSchema, SheetSide, ThresholdPolicy,
+        BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, FormOrientation,
+        GridGeometry, OmrFormSchema, SheetSide, ThresholdPolicy,
     };
 
     #[test]
@@ -32,6 +32,9 @@ mod tests {
             form_name: "Test".into(),
             duplex: false,
             dropout_color: DropoutColor::Red,
+            orientation: FormOrientation::Straight,
+            multi_mark_char: "*".into(),
+            blank_char: " ".into(),
             grid: GridGeometry {
                 front_rows: 10,
                 front_cols: 10,
@@ -46,6 +49,9 @@ mod tests {
                 field_type: FieldType::SubjectQuestions,
                 side: SheetSide::Front,
                 required_for_valid_sheet: false,
+                allow_multiple_marks: false,
+                hidden_from_output: false,
+                route_to_sub_on_multi: false,
                 items: vec![BubbleGroup {
                     index: 1,
                     options: vec![

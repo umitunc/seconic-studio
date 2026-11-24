@@ -12,8 +12,8 @@ mod tests {
     use super::commands::StackerTarget;
     use super::driver::OmrScannerDriver;
     use sekonic_schema::form_schema::{
-        BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, GridGeometry,
-        OmrFormSchema, SheetSide, ThresholdPolicy,
+        BubbleCoord, BubbleGroup, DropoutColor, FieldDefinition, FieldType, FormOrientation,
+        GridGeometry, OmrFormSchema, SheetSide, ThresholdPolicy,
     };
     use sekonic_sim::paper_generator::{generate_synthetic_sheet, SheetScenario};
     use sekonic_sim::virtual_sr6500::VirtualSr6500;
@@ -27,6 +27,9 @@ mod tests {
             form_name: "Sim 500".into(),
             duplex: false,
             dropout_color: DropoutColor::Red,
+            orientation: FormOrientation::Straight,
+            multi_mark_char: "*".into(),
+            blank_char: " ".into(),
             grid: GridGeometry {
                 front_rows: 16,
                 front_cols: 10,
@@ -41,6 +44,9 @@ mod tests {
                 field_type: FieldType::StudentId,
                 side: SheetSide::Front,
                 required_for_valid_sheet: true,
+                allow_multiple_marks: false,
+                hidden_from_output: false,
+                route_to_sub_on_multi: false,
                 items: vec![BubbleGroup {
                     index: 1,
                     options: (0..5)
@@ -112,7 +118,7 @@ mod tests {
         );
         assert_eq!(obs_rows, 2);
         assert!(!right_timing);
-        assert_eq!(dst, vec![0, 32, 80, 140, 230, 245]);
+        assert_eq!(dst, vec![0, 32, 64, 140, 224, 238]);
 
         // Blank sheet in 16-level mode (`max_level == 1` noise) must NOT turn into binary 220!
         let mut dst_blank = vec![0u8; 4];
@@ -152,9 +158,11 @@ mod tests {
         assert_eq!(HardwareCondition::from_status_code("H2"), HardwareCondition::PaperJam);
         assert_eq!(HardwareCondition::from_status_code("R4"), HardwareCondition::TimingMarkError);
 
-        // Simulate a 46-col sheet placed backwards so timing marks `@@@` appear at cols 45..47
+        // Simulate SR-6000 narrow A4 sheet where channels 45..47 sit over the black platen (`@@@`)
+        // on all 20 rows: channel 45 (`0`-based) must be masked to 0 (not flood option `E`),
+        // and `obs_rows` (20 vs expected 61) must be reported accurately without false right_timing.
         let row_str = format!("{}@@@", "0".repeat(45));
-        let wire = format!("MD00@@{}", vec![row_str.as_str(); 17].join(","));
+        let wire = format!("MD00@@{}", vec![row_str.as_str(); 20].join(","));
         let mut dst = vec![0u8; 61 * 46];
         let (obs_rows, right_timing) = OmrScannerDriver::<InMemoryTransport>::decode_md_into_slice(
             wire.as_bytes(),
@@ -163,7 +171,8 @@ mod tests {
             46,
             true,
         );
-        assert_eq!(obs_rows, 17);
-        assert!(right_timing);
+        assert_eq!(obs_rows, 20);
+        assert!(!right_timing);
+        assert_eq!(dst[45], 0);
     }
 }
