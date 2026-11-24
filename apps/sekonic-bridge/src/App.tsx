@@ -88,6 +88,8 @@ function mapRawSheetToRow(parsed: RawGradedSheet, template?: FormTemplate | null
   const warnings = parsed.warnings ?? [];
   const hasRightTiming = warnings.includes('kağıt_ters_yön_sağ_referans');
   const hasRowMismatch = warnings.some((w) => w.startsWith('okuma_çizgisi_uyumsuz:'));
+  const hasMultiMark = warnings.some((w) => w.endsWith('_multi_mark'));
+  const hasErasure = warnings.some((w) => w.endsWith('_erasure_recovered'));
 
   return {
     id: parsed.seq_no,
@@ -103,9 +105,11 @@ function mapRawSheetToRow(parsed: RawGradedSheet, template?: FormTemplate | null
         ? 'Çizgi Hatası'
         : parsed.missing_required_field
           ? 'Kayıtsız'
-          : warnings.length > 0
-            ? 'Silgi Kurtarıldı'
-            : 'Tamam',
+          : hasMultiMark
+            ? 'Çift İşaret'
+            : hasErasure
+              ? 'Silgi Kurtarıldı'
+              : 'Tamam',
     answersSummary,
     decodedFields: decoded,
     answers: answersMap,
@@ -258,6 +262,8 @@ export const App: React.FC = () => {
         cols: parsed.cols,
         orientation: parsed.orientation,
         markThreshold: parsed.markThreshold,
+        multiMarkChar: parsed.multiMarkChar,
+        blankChar: parsed.blankChar,
         fields: parsed.fields,
       };
       setTemplates((prev) => [nextTpl, ...prev]);
@@ -466,14 +472,15 @@ export const App: React.FC = () => {
         const w = parsed.warnings ?? [];
         if (w.includes('kağıt_ters_yön_sağ_referans')) {
           setErrorMsg(
-            'Kağıt ters yerleştirilmiş: Referans çizgileri sağ kenarda algılandı. Kağıtları referans çizgileri sol kenara gelecek şekilde yerleştirin.',
+            'Kağıt yönü hatalı görünüyor. Kağıtları referans çizgileri sol kenara gelecek şekilde yerleştirin.',
           );
         } else {
           const mismatch = w.find((item) => item.startsWith('okuma_çizgisi_uyumsuz:'));
           if (mismatch) {
-            const counts = mismatch.split(':')[1] ?? '';
+            const [got, exp] = (mismatch.split(':')[1] ?? '').split('/');
+            const tplName = activeTemplateRef.current?.name ?? 'Aktif Şablon';
             setErrorMsg(
-              `Okuma çizgisi sayısı uyuşmuyor (${counts}). Kağıt yönünü veya seçili şablonu kontrol edin.`,
+              `Okuma çizgisi sayısı uyuşmuyor: Kağıtta ${got ?? '?'} çizgi okundu, ancak "${tplName}" şablonu ${exp ?? '?'} satırlık. Lütfen okuduğunuz kağıda ait (${got ?? '?'} satırlık) şablonu/.fmt dosyasını seçin; şeritler kağıdın sağındaysa kağıdı 180° çevirip şeritleri sol kenara getirin.`,
             );
           }
         }
@@ -728,11 +735,15 @@ export const App: React.FC = () => {
             name: activeTemplate.name,
             rows: activeTemplate.rows,
             cols: activeTemplate.cols,
+            orientation: activeTemplate.orientation ?? 'D',
+            markThreshold: activeTemplate.markThreshold ?? 4,
             fields: activeTemplate.fields.map((f) => ({
               key: f.key,
               label: f.label,
               type: f.fieldType,
               dir: f.direction,
+              step: f.optionStep ?? 1,
+              sortOrder: f.sortOrder ?? 'normal',
               r: [f.startRow, f.startRow + f.rows - 1],
               c: [f.startCol, f.startCol + f.cols - 1],
               alphaLen: f.alphabet.length,
@@ -827,6 +838,12 @@ export const App: React.FC = () => {
                 templates={templates}
                 activeTemplateId={activeTemplateId}
                 onSelectTemplate={setActiveTemplateId}
+                onChangeTemplateOrientation={(orientation) => {
+                  if (!activeTemplate) return;
+                  setTemplates((prev) =>
+                    prev.map((t) => (t.id === activeTemplate.id ? { ...t, orientation } : t)),
+                  );
+                }}
                 onImportFmtFile={handleImportFmtFile}
                 onOpenDesigner={() => setActiveTab('forms')}
               />

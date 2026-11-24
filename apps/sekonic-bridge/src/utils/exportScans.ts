@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { ScannedRow } from '../types/scanner';
-import { FormTemplate } from './formTemplates';
+import { computeFieldOutputWidth, FormTemplate } from './formTemplates';
 
 export type ExportFormat = 'xlsx' | 'txt' | 'json';
 
@@ -30,6 +30,7 @@ function formatFixedWidth(value: string, width: number): string {
 function buildTemplateRecord(row: ScannedRow, template: FormTemplate): Record<string, string> {
   const record: Record<string, string> = {};
   for (const field of template.fields) {
+    if (field.hiddenFromOutput) continue;
     const raw =
       field.fieldType === 'subject_questions'
         ? (row.answers?.[field.key] ?? '')
@@ -88,8 +89,9 @@ export function exportScannedRows(
   const lines = ordered.map((r) => {
     if (hasTemplate && template) {
       return template.fields
+        .filter((field) => !field.hiddenFromOutput)
         .map((field) => {
-          const width = field.direction === 'D' ? field.cols : field.rows;
+          const width = computeFieldOutputWidth(field);
           const raw =
             field.fieldType === 'subject_questions'
               ? (r.answers?.[field.key] ?? '')

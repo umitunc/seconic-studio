@@ -16,6 +16,7 @@ import {
   FIELD_COLORS as COLORS,
   FormTemplate,
   parseFmtOrBldm,
+  serializeTemplateToFmt,
 } from '../../utils/formTemplates';
 
 export type { DesignerField, FormTemplate };
@@ -141,6 +142,15 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
       ctx.moveTo(0, y);
       ctx.lineTo(cssW, y);
       ctx.stroke();
+    }
+
+    // Draw scanner reference timing stripes along the left sensor edge (col 0)
+    ctx.fillStyle = theme === 'dark' ? 'rgba(244, 244, 245, 0.55)' : 'rgba(24, 24, 27, 0.65)';
+    for (let r = 0; r < gridDims.rows; r++) {
+      const barH = Math.max(2, ch * 0.46);
+      const barW = Math.max(4, Math.min(10, cw * 0.55));
+      const y = r * ch + (ch - barH) / 2;
+      ctx.fillRect(2, y, barW, barH);
     }
 
     for (const f of fields) {
@@ -279,6 +289,10 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
           name: baseName,
           rows: parsed.rows,
           cols: parsed.cols,
+          orientation: parsed.orientation,
+          markThreshold: parsed.markThreshold,
+          multiMarkChar: parsed.multiMarkChar,
+          blankChar: parsed.blankChar,
           fields: parsed.fields,
         });
       }
@@ -295,10 +309,20 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
     setFields((prev) => prev.map((f) => (f.id === selectedId ? { ...f, ...patch } : f)));
   };
 
+  const exportFmt = () => {
+    const fmtText = serializeTemplateToFmt(activeTemplate);
+    const blob = new Blob([fmtText], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${activeTemplate.name}.fmt`;
+    a.click();
+  };
+
   const exportJson = () => {
     const payload = {
       schema_version: 1,
       form_id: activeTemplate.name,
+      orientation: activeTemplate.orientation ?? 'D',
       grid: { front_rows: gridDims.rows, front_cols: gridDims.cols },
       threshold_policy: policy,
       fields,
@@ -387,7 +411,7 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
                     <FileText size={12} /> {tpl.name}
                   </div>
                   <div style={{ fontSize: 10, color: 'var(--uxigl-text-muted)', marginTop: 2 }}>
-                    {tpl.rows}×{tpl.cols} • {tpl.fields.length} alan
+                    {tpl.rows}×{tpl.cols} • {tpl.orientation === 'T' ? 'Ters (T)' : 'Düz (D)'} • {tpl.fields.length} alan
                   </div>
                 </div>
                 {templates.length > 1 && (
@@ -431,18 +455,57 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
       {/* 2. Orta Optik Izgara Tasarımcısı */}
       <div className="uxigl-glass-card" style={{ flex: 1, padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 }}>
             <input
               type="text"
               className="uxigl-select"
               value={activeTemplate.name}
               onChange={(e) => updateActiveTemplate((t) => ({ ...t, name: e.target.value }))}
-              style={{ fontWeight: 700, fontSize: 13, width: 250 }}
+              style={{ fontWeight: 700, fontSize: 13, width: 220 }}
               title="Şablon adını düzenle"
             />
-            <span style={{ fontSize: 11, color: 'var(--uxigl-text-muted)' }}>
-              ({gridDims.rows}×{gridDims.cols})
-            </span>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--uxigl-text-muted)' }}>
+              Çizgi
+              <input
+                type="number"
+                className="uxigl-select"
+                min={5}
+                max={120}
+                value={gridDims.rows}
+                onChange={(e) =>
+                  updateActiveTemplate((t) => ({ ...t, rows: Math.max(5, Math.min(120, Number(e.target.value) || 51)) }))
+                }
+                style={{ width: 56, padding: '4px 6px', fontSize: 11 }}
+                title="Okuma çizgisi (satır) sayısı"
+              />
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--uxigl-text-muted)' }}>
+              Sütun
+              <input
+                type="number"
+                className="uxigl-select"
+                min={5}
+                max={48}
+                value={gridDims.cols}
+                onChange={(e) =>
+                  updateActiveTemplate((t) => ({ ...t, cols: Math.max(5, Math.min(48, Number(e.target.value) || 46)) }))
+                }
+                style={{ width: 54, padding: '4px 6px', fontSize: 11 }}
+                title="Sütun sayısı (en fazla 48)"
+              />
+            </label>
+            <select
+              className="uxigl-select"
+              value={activeTemplate.orientation === 'T' ? 'T' : 'D'}
+              onChange={(e) =>
+                updateActiveTemplate((t) => ({ ...t, orientation: e.target.value === 'T' ? 'T' : 'D' }))
+              }
+              style={{ fontSize: 11, padding: '4px 8px' }}
+              title="Okuma çizgileri düz kağıtta soldaysa Düz (D), sağdaysa Ters (T - 180°)"
+            >
+              <option value="D">Düz (D • Sol Şerit)</option>
+              <option value="T">Ters (T • Sağ Şerit 180°)</option>
+            </select>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button
@@ -480,7 +543,10 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
             >
               <ZoomIn size={13} />
             </button>
-            <button className="uxigl-btn" style={{ fontSize: 12, padding: '6px 10px' }} onClick={exportJson}>
+            <button className="uxigl-btn" style={{ fontSize: 12, padding: '6px 10px' }} onClick={exportFmt} title=".fmt olarak indir">
+              <Download size={13} /> .fmt
+            </button>
+            <button className="uxigl-btn" style={{ fontSize: 12, padding: '6px 10px' }} onClick={exportJson} title="JSON olarak indir">
               <Download size={13} /> JSON
             </button>
           </div>

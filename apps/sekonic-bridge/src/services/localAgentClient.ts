@@ -48,6 +48,7 @@ export interface RawGradedSheet {
   warnings?: string[];
   raw_matrix_b64?: string;
   raw_wire_sample?: string;
+  observed_front_rows?: number;
 }
 
 export interface ScannerDiagnosticInfo {

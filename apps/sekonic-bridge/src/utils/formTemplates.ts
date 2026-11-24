@@ -12,7 +12,24 @@ export interface DesignerField {
   cols: number;
   rows: number;
   color: string;
+  /** Step stride across option rows/columns (`1` for `D`/`Y`, `2` for `D2`/`Y2`, etc.). */
+  optionStep?: number;
+  /**
+   * Per-field ordering (`Hazirlama106.exe` `Combo4`):
+   * - `'normal'` (`2 - Normal`, default): follows template `orientation` (`D` = upright, `T` = 180° reversed).
+   * - `'reverse'` (`1 - Ters!`): inverts ordering relative to template `orientation`.
+   */
+  sortOrder?: 'normal' | 'reverse';
+  /** Legacy flag kept for backward compatibility with saved localStorage templates. */
   reverseItems?: boolean;
+  /** `C` / `M` in `.fmt`: multiple bubbles may be marked in the same item (`C2`, `M2`). */
+  allowMultipleMarks?: boolean;
+  /** `Q` in `.fmt`: validate star/multi-mark only, omit from `.txt`/`.xlsx`/`.json` output. */
+  hiddenFromOutput?: boolean;
+  /** `Z` / `U` in `.fmt`: route sheet to sub-stacker when multi-marked. */
+  routeToSubOnError?: boolean;
+  /** Original `.fmt` `p[4]` (`K` = Karakter, `H` = Harf, `S` = Sayısal). */
+  dataKind?: 'K' | 'H' | 'S';
 }
 
 export interface FormTemplate {
@@ -20,8 +37,14 @@ export interface FormTemplate {
   name: string;
   rows: number;
   cols: number;
+  /**
+   * `D` (Düz): Timing stripes are on the left edge when the sheet is held upright.
+   * `T` (Ters): Timing stripes are on the right edge when held upright, so sheets are fed 180° rotated.
+   */
   orientation?: 'D' | 'T';
   markThreshold?: number;
+  multiMarkChar?: string;
+  blankChar?: string;
   fields: DesignerField[];
 }
 
@@ -33,16 +56,72 @@ export const FIELD_COLORS = [
   'rgba(236, 72, 153, 0.22)',
 ];
 
+const TR_ALPHABET = 'ABCÇDEFGĞHIİJKLMNOÖPRSŞTUÜVYZ';
+
 export const DEFAULT_TEMPLATES: FormTemplate[] = [
+  {
+    id: 'tpl_builtin_aydin_536_d',
+    name: 'AYDIN TYT AYT 536 (61 Satır • Sol Şerit D)',
+    rows: 61,
+    cols: 46,
+    orientation: 'D',
+    markThreshold: 4,
+    multiMarkChar: '*',
+    blankChar: ' ',
+    fields: [
+      { id: 'ayd_1', key: 'kod_1', label: 'KOD-1', fieldType: 'student_id', direction: 'D', alphabet: '5', startRow: 0, rows: 1, startCol: 9, cols: 1, color: FIELD_COLORS[0] },
+      { id: 'ayd_2', key: 'kod_2', label: 'KOD-2', fieldType: 'student_id', direction: 'D', alphabet: '3', startRow: 9, rows: 1, startCol: 9, cols: 1, color: FIELD_COLORS[0] },
+      { id: 'ayd_3', key: 'kod_3', label: 'KOD-3', fieldType: 'student_id', direction: 'D', alphabet: '6', startRow: 29, rows: 1, startCol: 1, cols: 1, color: FIELD_COLORS[0] },
+      { id: 'ayd_4', key: 'okul_kodu', label: 'OKUL KODU', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 0, rows: 10, startCol: 1, cols: 8, color: FIELD_COLORS[3] },
+      { id: 'ayd_5', key: 'öğrenci_no', label: 'ÖĞRENCİ NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 0, rows: 10, startCol: 10, cols: 5, color: FIELD_COLORS[0] },
+      { id: 'ayd_6', key: 'adı_soyadı', label: 'ADI SOYADI', fieldType: 'student_id', direction: 'D', alphabet: TR_ALPHABET, startRow: 32, rows: 29, startCol: 1, cols: 20, color: FIELD_COLORS[2] },
+      { id: 'ayd_7', key: 'tc_tel', label: 'TC/TEL', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 19, rows: 10, startCol: 1, cols: 11, color: FIELD_COLORS[3] },
+      { id: 'ayd_8', key: 'alan', label: 'ALAN', fieldType: 'student_id', direction: 'D', alphabet: '1 2 3 4', startRow: 1, rows: 7, startCol: 21, cols: 1, color: FIELD_COLORS[4] },
+      { id: 'ayd_9', key: 'sinif_1', label: 'SINIF-1', fieldType: 'student_id', direction: 'D', alphabet: '  1 1 1  ', startRow: 0, rows: 9, startCol: 17, cols: 1, color: FIELD_COLORS[4] },
+      { id: 'ayd_10', key: 'sinif_2', label: 'SINIF-2', fieldType: 'student_id', direction: 'D', alphabet: '9 0 1 2 M', startRow: 0, rows: 9, startCol: 17, cols: 1, color: FIELD_COLORS[4] },
+      { id: 'ayd_11', key: 'şube', label: 'ŞUBE', fieldType: 'student_id', direction: 'D', alphabet: TR_ALPHABET, startRow: 0, rows: 29, startCol: 18, cols: 1, color: FIELD_COLORS[4] },
+      { id: 'ayd_12', key: 'grup', label: 'GRUP', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 19, rows: 10, startCol: 13, cols: 3, color: FIELD_COLORS[3] },
+      { id: 'ayd_13', key: 'oturum_no', label: 'OTURUM NO', fieldType: 'student_id', direction: 'D', alphabet: '12', startRow: 9, rows: 2, startCol: 33, cols: 1, color: FIELD_COLORS[4] },
+      { id: 'ayd_14', key: 'kitapçık', label: 'KİTAPÇIK', fieldType: 'booklet_type', direction: 'Y', alphabet: 'A B', startRow: 12, rows: 1, startCol: 7, cols: 3, color: FIELD_COLORS[2] },
+      { id: 'ayd_15', key: 'türkçe', label: 'TÜRKÇE', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 15, rows: 40, startCol: 23, cols: 5, color: FIELD_COLORS[1] },
+      { id: 'ayd_16', key: 'sosyal_bilimler', label: 'SOSYAL BİLİMLER', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 15, rows: 46, startCol: 29, cols: 5, color: FIELD_COLORS[1] },
+      { id: 'ayd_17', key: 'matematik', label: 'MATEMATİK', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 15, rows: 40, startCol: 35, cols: 5, color: FIELD_COLORS[1] },
+      { id: 'ayd_18', key: 'fen_bilimleri', label: 'FEN BİLİMLERİ', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 15, rows: 40, startCol: 41, cols: 5, color: FIELD_COLORS[1] },
+    ],
+  },
+  {
+    id: 'tpl_builtin_yks_58_t',
+    name: 'YKS TYT-AYT Cevap Kağıdı (58 Satır • Sağ Şerit T)',
+    rows: 58,
+    cols: 45,
+    orientation: 'T',
+    markThreshold: 4,
+    multiMarkChar: '*',
+    blankChar: ' ',
+    fields: [
+      { id: 'yks_1', key: 'kurum_kodu', label: 'KURUM KODU', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 48, rows: 10, startCol: 26, cols: 7, color: FIELD_COLORS[3] },
+      { id: 'yks_2', key: 'öğrenci_no', label: 'ÖĞRENCİ NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 32, rows: 10, startCol: 25, cols: 5, color: FIELD_COLORS[0] },
+      { id: 'yks_3', key: 'sınıf_şube', label: 'SINIF / ŞUBE', fieldType: 'student_id', direction: 'D', alphabet: 'ABCÇDEFGĞH', startRow: 32, rows: 10, startCol: 30, cols: 2, color: FIELD_COLORS[4] },
+      { id: 'yks_4', key: 'tc_kimlik_no', label: 'T.C. KİMLİK NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 32, rows: 10, startCol: 33, cols: 11, color: FIELD_COLORS[3] },
+      { id: 'yks_5', key: 'kitapçık', label: 'KİTAPÇIK TÜRÜ', fieldType: 'booklet_type', direction: 'D', alphabet: 'A B C D', startRow: 41, rows: 7, startCol: 33, cols: 1, color: FIELD_COLORS[2] },
+      { id: 'yks_6', key: 'soyadı_adı', label: 'SOYADI ADI', fieldType: 'student_id', direction: 'D', alphabet: TR_ALPHABET, startRow: 0, rows: 29, startCol: 29, cols: 15, color: FIELD_COLORS[2] },
+      { id: 'yks_7', key: 'türkçe', label: 'TÜRKÇE', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 0, rows: 40, startCol: 19, cols: 5, color: FIELD_COLORS[1] },
+      { id: 'yks_8', key: 'sosyal_bilimler', label: 'SOSYAL BİLİMLER', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 0, rows: 40, startCol: 13, cols: 5, color: FIELD_COLORS[1] },
+      { id: 'yks_9', key: 'temel_matematik', label: 'TEMEL MATEMATİK', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 0, rows: 40, startCol: 7, cols: 5, color: FIELD_COLORS[1] },
+      { id: 'yks_10', key: 'fen_bilimleri', label: 'FEN BİLİMLERİ', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 0, rows: 40, startCol: 1, cols: 5, color: FIELD_COLORS[1] },
+    ],
+  },
   {
     id: 'tpl_default_bes_faktor',
     name: 'K12 BEŞ FAKTÖR KİŞİLİK ENVANTERİ',
     rows: 51,
     cols: 46,
+    orientation: 'D',
+    markThreshold: 4,
     fields: [
       { id: 'f1', key: 'ogrenci_no', label: 'ÖĞRENCİ NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startCol: 1, startRow: 9, cols: 5, rows: 10, color: FIELD_COLORS[0] },
       { id: 'f2', key: 'tc_kimlik', label: 'T.C. KİMLİK NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startCol: 12, startRow: 9, cols: 11, rows: 10, color: FIELD_COLORS[3] },
-      { id: 'f3', key: 'adi_soyadi', label: 'ADI SOYADI', fieldType: 'student_id', direction: 'D', alphabet: 'ABCÇDEFGĞHIİJKLMNOÖPRSŞTUÜVYZ', startCol: 1, startRow: 22, cols: 22, rows: 29, color: FIELD_COLORS[2] },
+      { id: 'f3', key: 'adi_soyadi', label: 'ADI SOYADI', fieldType: 'student_id', direction: 'D', alphabet: TR_ALPHABET, startCol: 1, startRow: 22, cols: 22, rows: 29, color: FIELD_COLORS[2] },
       { id: 'f4', key: 'sorular', label: 'SORULAR', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startCol: 41, startRow: 1, cols: 5, rows: 50, color: FIELD_COLORS[1] },
     ],
   },
@@ -51,6 +130,8 @@ export const DEFAULT_TEMPLATES: FormTemplate[] = [
     name: 'Standart Optik Sınav Formu (20 Soru)',
     rows: 32,
     cols: 24,
+    orientation: 'D',
+    markThreshold: 4,
     fields: [
       { id: 's1', key: 'student_id', label: 'ÖĞRENCİ NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startCol: 1, startRow: 2, cols: 6, rows: 10, color: FIELD_COLORS[0] },
       { id: 's2', key: 'kitapcik', label: 'KİTAPÇIK', fieldType: 'booklet_type', direction: 'Y', alphabet: 'ABCD', startCol: 9, startRow: 2, cols: 4, rows: 1, color: FIELD_COLORS[2] },
@@ -62,22 +143,54 @@ export const DEFAULT_TEMPLATES: FormTemplate[] = [
 const STORAGE_KEY = 'sekonic-templates-v1';
 const ACTIVE_ID_KEY = 'sekonic-active-template-id';
 
+function reverseAlphabetSpec(alphabet: string): string {
+  if (alphabet.includes('~')) {
+    const tokens = splitAlphabetTokens(alphabet).reverse();
+    return `${tokens.join('~')}~`;
+  }
+  return Array.from(alphabet).reverse().join('');
+}
+
+/** Migrates any older saved template where `reverseItems` pre-reversed `alphabet` on `T` forms. */
+function normalizeSavedTemplate(tpl: FormTemplate): FormTemplate {
+  const upgradedFields = tpl.fields.map((f) => {
+    let next = f;
+    if (tpl.id === 'tpl_default_bes_faktor' && f.id === 'f4' && f.alphabet === '12345') {
+      next = { ...next, alphabet: 'ABCDE' };
+    }
+    if (next.reverseItems !== undefined && next.sortOrder === undefined) {
+      // Previously `parseFmtOrBldm` pre-reversed `alphabet` when `reverseItems === true` on `T` templates.
+      const restoredAlpha =
+        tpl.orientation === 'T' && next.reverseItems
+          ? reverseAlphabetSpec(next.alphabet)
+          : next.alphabet;
+      const { reverseItems: _legacy, ...rest } = next;
+      next = {
+        ...rest,
+        alphabet: restoredAlpha,
+        sortOrder: 'normal',
+      };
+    }
+    return next;
+  });
+
+  return {
+    ...tpl,
+    orientation: tpl.orientation ?? 'D',
+    fields: upgradedFields,
+  };
+}
+
 export function loadTemplates(): FormTemplate[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as FormTemplate[];
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map((tpl) =>
-          tpl.id === 'tpl_default_bes_faktor'
-            ? {
-                ...tpl,
-                fields: tpl.fields.map((f) =>
-                  f.id === 'f4' && f.alphabet === '12345' ? { ...f, alphabet: 'ABCDE' } : f,
-                ),
-              }
-            : tpl,
-        );
+        const normalized = parsed.map(normalizeSavedTemplate);
+        const existingIds = new Set(normalized.map((t) => t.id));
+        const missingBuiltins = DEFAULT_TEMPLATES.filter((b) => !existingIds.has(b.id));
+        return [...normalized, ...missingBuiltins];
       }
     }
   } catch {
@@ -112,7 +225,7 @@ export function saveActiveTemplateId(id: string): void {
   }
 }
 
-function splitAlphabetTokens(alphabet: string): string[] {
+export function splitAlphabetTokens(alphabet: string): string[] {
   if (alphabet.includes('~')) {
     const parts = alphabet.split('~');
     if (parts[parts.length - 1] === '') parts.pop();
@@ -121,67 +234,150 @@ function splitAlphabetTokens(alphabet: string): string[] {
   return Array.from(alphabet);
 }
 
+/**
+ * Parses Sekonic / Bikom `.fmt` (`Hazirlama106.exe` & `SekOku.exe`) and `.bldm` files.
+ *
+ * Verified from `Hazirlama106.exe` (`0x487d73..0x488a78`) & `SekOku.exe` (`0x476900..0x4af9b4`):
+ * - Header: `rows=cols=thresholdHex=orientation(D|T)=multiChar=blankChar=`
+ *   - `D` (Düz): Timing stripes on the left edge when held upright.
+ *   - `T` (Ters): Timing stripes on the right edge when held upright (fed 180° rotated so stripes sit on left).
+ * - Field: `r1=r2=c1=c2=dataKind(K|H|S|T)=dir(D|Y|D2|Y2)=alphabet=mode(X2|X1|X|C2|M2|Q2|Z2|U2)=label=`
+ */
 export function parseFmtOrBldm(text: string): {
   rows: number;
   cols: number;
   orientation: 'D' | 'T';
   markThreshold?: number;
+  multiMarkChar?: string;
+  blankChar?: string;
   fields: DesignerField[];
 } | null {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = text.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l.trim().length > 0);
   if (lines.length < 2) return null;
-  const h = lines[0].split('=');
+  const h = lines[0].trim().split('=');
   const rows = Number(h[0]) || 51;
   const cols = Number(h[1]) || 46;
-  const rawThresh = Number(h[2]);
+  // `SekOku.exe @ 0x48853f` parses `h[2]` via `Val("&H" & h[2])`
+  const rawThresh = parseInt((h[2] ?? '').trim(), 16);
   const markThreshold = Number.isFinite(rawThresh) && rawThresh > 0 ? rawThresh : undefined;
   const isReverseMode = (h[3] ?? '').trim().toUpperCase() === 'T';
   const orientation: 'D' | 'T' = isReverseMode ? 'T' : 'D';
+  const multiMarkChar = h[4] && h[4].length > 0 ? h[4] : '*';
+  const blankChar = h[5] && h[5].length > 0 ? h[5] : ' ';
   const fields: DesignerField[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const p = lines[i].split('=');
+    const p = lines[i].trim().split('=');
     if (p.length < 7) continue;
 
+    // Recover occasional `.fmt` typos where `~X2=` missed `=` before `X2` (e.g. `K12 SOSYOMETRİ`)
+    if (p.length === 8 && /~[A-Z][123]?$/i.test(p[6] ?? '')) {
+      const m = (p[6] ?? '').match(/^(.*~)([A-Z][123]?)$/i);
+      if (m) {
+        p.splice(6, 1, m[1], m[2]);
+      }
+    }
+
+    const kindUpper = (p[4] ?? '').trim().toUpperCase();
+    const dirToken = (p[5] ?? '').trim().toUpperCase();
     const isFmt =
-      p.length >= 9 &&
-      (p[4] === 'K' || p[4] === 'H' || p[4] === 'S') &&
-      (p[5] === 'D' || p[5] === 'Y');
+      p.length >= 8 &&
+      (kindUpper === 'K' || kindUpper === 'H' || kindUpper === 'S' || kindUpper === 'T') &&
+      /^[DY]\d*$/.test(dirToken);
+
     if (isFmt) {
       const r1 = Math.max(1, Number(p[0]) || 1) - 1;
       const r2 = Math.max(r1 + 1, Number(p[1]) || r1 + 1) - 1;
       const c1 = Math.max(1, Number(p[2]) || 1) - 1;
       const c2 = Math.max(c1 + 1, Number(p[3]) || c1 + 1) - 1;
-      const dir = (p[5] === 'Y' ? 'Y' : 'D') as 'D' | 'Y';
+      const dir: 'D' | 'Y' = dirToken.startsWith('Y') ? 'Y' : 'D';
+      const stepParsed = parseInt(dirToken.slice(1), 10);
+      const optionStep = Number.isFinite(stepParsed) && stepParsed > 1 ? stepParsed : 1;
+
       const rawAlphabet = p[6] ?? '';
       const modeFlag = (p[7] ?? '').trim().toUpperCase();
-      // Verified from `SekOku.exe @ 0x4aea09..0x4aedbd` & `0x4af408..0x4af75d`:
-      // When header h[3] == 'T' (180° rotated timing-mark-right form) and field mode ends with '1' or '2',
-      // BOTH option labels and item sequence are reversed!
-      const reverseForT = isReverseMode && (modeFlag.endsWith('1') || modeFlag.endsWith('2'));
-      const alphabet = reverseForT
-        ? rawAlphabet.includes('~')
-          ? `${splitAlphabetTokens(rawAlphabet).reverse().join('~')}~`
-          : Array.from(rawAlphabet).reverse().join('')
-        : rawAlphabet;
-      const rawName = (p[8] ?? '').replace(/^\[|\]$/g, '').trim();
+      const modeLead = modeFlag[0] ?? 'X';
+      const sortDigit = modeFlag.slice(1); // '2' = Normal, '1' = Ters!, '' = legacy Bikom ('X')
 
-      if (!rawName || rawName.toLowerCase() === 'boş' || alphabet.trim() === '') {
+      const rawName = p
+        .slice(8)
+        .join('=')
+        .replace(/=+$/g, '')
+        .replace(/^\[|\]$/g, '')
+        .trim();
+
+      if (rawName.toLocaleLowerCase('tr-TR') === 'boş' || rawAlphabet.length === 0) {
+        continue;
+      }
+      // Skip spacer-only lines (`33=33=01=40=K=D= =X2==` where alphabet is pure whitespace and name is empty)
+      if (rawAlphabet.trim() === '' && rawName === '') {
         continue;
       }
 
-      const lower = rawName.toLocaleLowerCase('tr-TR');
+      // Normalize alphabet & sortOrder so `DesignerField.alphabet` always holds logical order
+      // while `templateToOmrSchema` applies exact `SekOku.exe` `T`-mode reversal!
+      let alphabet = rawAlphabet;
+      let sortOrder: 'normal' | 'reverse' = 'normal';
+      if (isReverseMode) {
+        if (sortDigit === '2') {
+          // Standard Sekonic `.fmt` (`X2`, `C2`, `Z2`, `U2`): `rawAlphabet` is normal (`ABCDE`),
+          // and `templateToOmrSchema` reverses both option labels and item sequence when `orientation === 'T'`.
+          sortOrder = 'normal';
+        } else if (sortDigit === '1') {
+          // `1 - Ters!`: do NOT reverse on `T` form (`SekOku.exe @ 0x4aec1c`)
+          sortOrder = 'reverse';
+        } else {
+          // Legacy `BIKOM.fmt` (`p[7] = 'X'` without digit on `T` header):
+          // If author pre-reversed alphabet (`ZYV...CBA`, `9876543210`, `CBA`), un-reverse it to logical order
+          // so `templateToOmrSchema` reverses both option labels and item sequence uniformly.
+          const looksPreReversed =
+            rawAlphabet.startsWith('ZY') ||
+            rawAlphabet.startsWith('987') ||
+            rawAlphabet === 'EDCBA' ||
+            rawAlphabet === 'DCBA' ||
+            rawAlphabet === 'CBA';
+          if (looksPreReversed) {
+            alphabet = reverseAlphabetSpec(rawAlphabet);
+            sortOrder = 'normal';
+          } else {
+            // Only item sequence is reversed; keep alphabet as written by flipping it once before `T` reversal
+            alphabet = reverseAlphabetSpec(rawAlphabet);
+            sortOrder = 'normal';
+          }
+        }
+      } else if (sortDigit === '1') {
+        // Explicit `1 - Ters!` on a `D` form
+        sortOrder = 'reverse';
+      }
+
+      const allowMultipleMarks = modeLead === 'C' || modeLead === 'M';
+      const hiddenFromOutput = modeLead === 'Q';
+      const routeToSubOnError = modeLead === 'Z' || modeLead === 'U' || modeLead === 'V' || modeLead === 'S';
+
+      const effectiveLabel = rawName || `Alan ${fields.length + 1}`;
+      const lower = effectiveLabel.toLocaleLowerCase('tr-TR');
       const fieldType: DesignerField['fieldType'] =
         lower.includes('kitap')
           ? 'booklet_type'
-          : dir === 'D' || p[4] === 'S' || lower.includes('no') || lower.includes('tc') || lower.includes('ad') || lower.includes('kimlik')
+          : dir === 'D' ||
+              kindUpper === 'S' ||
+              lower.includes('no') ||
+              lower.includes('tc') ||
+              lower.includes('ad') ||
+              lower.includes('kimlik') ||
+              lower.includes('kurum') ||
+              lower.includes('okul') ||
+              lower.includes('sınıf') ||
+              lower.includes('sinif') ||
+              lower.includes('şube') ||
+              lower.includes('sube')
             ? 'student_id'
             : 'subject_questions';
 
       fields.push({
         id: `fmt_${i}`,
-        key: rawName.toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü]+/gi, '_'),
-        label: rawName,
+        key: effectiveLabel.toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü]+/gi, '_').replace(/^_+|_+$/g, '') || `alan_${i}`,
+        label: effectiveLabel,
         fieldType,
         direction: dir,
         alphabet,
@@ -190,7 +386,12 @@ export function parseFmtOrBldm(text: string): {
         cols: c2 - c1 + 1,
         rows: r2 - r1 + 1,
         color: FIELD_COLORS[fields.length % FIELD_COLORS.length],
-        reverseItems: reverseForT,
+        optionStep: optionStep > 1 ? optionStep : undefined,
+        sortOrder,
+        allowMultipleMarks: allowMultipleMarks || undefined,
+        hiddenFromOutput: hiddenFromOutput || undefined,
+        routeToSubOnError: routeToSubOnError || undefined,
+        dataKind: (kindUpper === 'S' ? 'S' : kindUpper === 'H' ? 'H' : 'K'),
       });
     } else {
       const r1 = Math.max(1, Number(p[1]) || 1) - 1;
@@ -212,7 +413,56 @@ export function parseFmtOrBldm(text: string): {
       });
     }
   }
-  return { rows, cols, orientation, markThreshold, fields };
+  return { rows, cols, orientation, markThreshold, multiMarkChar, blankChar, fields };
+}
+
+/** Exports a `FormTemplate` to a genuine `SekOku.exe` / `Hazirlama106.exe`-compatible `.fmt` string. */
+export function serializeTemplateToFmt(tpl: FormTemplate): string {
+  const pad2 = (n: number) => String(Math.max(1, Math.round(n))).padStart(2, '0');
+  const threshHex = String(Math.max(1, Math.min(15, tpl.markThreshold ?? 4)))
+    .toString()
+    .padStart(2, '0');
+  const orient = tpl.orientation === 'T' ? 'T' : 'D';
+  const multi = tpl.multiMarkChar || '*';
+  const blank = tpl.blankChar || ' ';
+
+  const lines: string[] = [`${pad2(tpl.rows)}=${pad2(tpl.cols)}=${threshHex}=${orient}=${multi}=${blank}=`];
+  for (const f of tpl.fields) {
+    const r1 = pad2(f.startRow + 1);
+    const r2 = pad2(f.startRow + f.rows);
+    const c1 = pad2(f.startCol + 1);
+    const c2 = pad2(f.startCol + f.cols);
+    const kind = f.dataKind ?? 'K';
+    const step = f.optionStep && f.optionStep > 1 ? String(f.optionStep) : '';
+    const dir = `${f.direction}${step}`;
+    const modeLead = f.allowMultipleMarks
+      ? f.direction === 'Y'
+        ? 'C'
+        : 'M'
+      : f.hiddenFromOutput
+        ? 'Q'
+        : f.routeToSubOnError
+          ? 'Z'
+          : 'X';
+    const sortDigit = f.sortOrder === 'reverse' ? '1' : '2';
+    lines.push(`${r1}=${r2}=${c1}=${c2}=${kind}=${dir}=${f.alphabet}=${modeLead}${sortDigit}=${f.label}=`);
+  }
+  return `${lines.join('\r\n')}\r\n`;
+}
+
+/** Computes the fixed character width produced by a `DesignerField` in `SekOku.exe` `.txt` output. */
+export function computeFieldOutputWidth(f: DesignerField): number {
+  if (f.hiddenFromOutput) return 0;
+  const itemCount = f.direction === 'D' ? f.cols : f.rows;
+  const tokens = splitAlphabetTokens(f.alphabet || 'ABCDE');
+  const maxTokenLen = Math.max(1, ...tokens.map((t) => Array.from(t).length));
+  if (f.allowMultipleMarks) {
+    const step = Math.max(1, f.optionStep ?? 1);
+    const span = f.direction === 'D' ? f.rows : f.cols;
+    const optCount = Math.floor((span - 1) / step) + 1;
+    return itemCount * Math.max(optCount, maxTokenLen);
+  }
+  return itemCount * maxTokenLen;
 }
 
 /**
@@ -227,6 +477,7 @@ export function templateToOmrSchema(
 ): Record<string, unknown> {
   const maxRows = Math.max(1, Math.round(tpl.rows));
   const maxCols = Math.max(1, Math.round(tpl.cols));
+  const isTplReverse = tpl.orientation === 'T';
   const usedKeys = new Set<string>();
 
   const fields = tpl.fields.map((f, idx) => {
@@ -238,20 +489,46 @@ export function templateToOmrSchema(
     }
     usedKeys.add(uniqueKey);
 
-    const alphaTokens = splitAlphabetTokens(f.alphabet || 'ABCDE');
+    // Exact `SekOku.exe @ 0x4aea09..0x4af9b4` orientation truth table:
+    // - `D` + `normal` (`X2`): upright alphabet & upright item order
+    // - `T` + `normal` (`X2`): 180°-rotated sheet -> reverse both option labels AND item order!
+    // - `D` + `reverse` (`X1`): reversed item order
+    // - `T` + `reverse` (`X1`): un-reversed
+    const effectiveReverse =
+      f.sortOrder !== undefined
+        ? isTplReverse !== (f.sortOrder === 'reverse')
+        : Boolean(f.reverseItems) || isTplReverse;
+
+    const baseTokens = splitAlphabetTokens(f.alphabet || 'ABCDE');
+    const step = Math.max(1, Math.round(f.optionStep ?? 1));
+    const optSpan = f.direction === 'D' ? f.rows : f.cols;
+    const slotCount = Math.max(1, Math.floor((optSpan - 1) / step) + 1);
+
+    // Align option labels to exact grid slot count before reversing on `T` forms
+    const slotLabels: string[] = [];
+    for (let s = 0; s < slotCount; s++) {
+      slotLabels.push(
+        baseTokens[s] ??
+          (f.direction === 'D' ? String(s) : String.fromCharCode(65 + (s % 26))),
+      );
+    }
+    if (effectiveReverse) {
+      slotLabels.reverse();
+    }
+
     const items: Array<{ index: number; options: Array<{ label: string; row: number; col: number }> }> = [];
 
     if (f.direction === 'D') {
-      // Vertical digits/letters: each column is one item, rows are options
+      // Vertical digits/letters: each column is one item, rows (stepped by `step`) are options
       for (let c = 0; c < f.cols; c++) {
         const col = f.startCol + c;
         if (col < 0 || col >= maxCols) continue;
         const options: Array<{ label: string; row: number; col: number }> = [];
-        for (let r = 0; r < f.rows; r++) {
-          const row = f.startRow + r;
+        for (let s = 0; s < slotCount; s++) {
+          const row = f.startRow + s * step;
           if (row < 0 || row >= maxRows) continue;
           options.push({
-            label: alphaTokens[r] ?? String(r),
+            label: slotLabels[s] ?? String(s),
             row,
             col,
           });
@@ -261,16 +538,16 @@ export function templateToOmrSchema(
         }
       }
     } else {
-      // Horizontal questions: each row is one item, columns are options
+      // Horizontal questions: each row is one item, columns (stepped by `step`) are options
       for (let r = 0; r < f.rows; r++) {
         const row = f.startRow + r;
         if (row < 0 || row >= maxRows) continue;
         const options: Array<{ label: string; row: number; col: number }> = [];
-        for (let c = 0; c < f.cols; c++) {
-          const col = f.startCol + c;
+        for (let s = 0; s < slotCount; s++) {
+          const col = f.startCol + s * step;
           if (col < 0 || col >= maxCols) continue;
           options.push({
-            label: alphaTokens[c] ?? String.fromCharCode(65 + (c % 26)),
+            label: slotLabels[s] ?? String.fromCharCode(65 + (s % 26)),
             row,
             col,
           });
@@ -281,7 +558,7 @@ export function templateToOmrSchema(
       }
     }
 
-    if (f.reverseItems && items.length > 1) {
+    if (effectiveReverse && items.length > 1) {
       items.reverse();
       items.forEach((it, i) => {
         it.index = i + 1;
@@ -295,6 +572,9 @@ export function templateToOmrSchema(
       required_for_valid_sheet:
         f.fieldType === 'student_id' &&
         (uniqueKey.includes('ogrenci') || uniqueKey.includes('öğrenci') || uniqueKey.includes('student')),
+      allow_multiple_marks: Boolean(f.allowMultipleMarks),
+      hidden_from_output: Boolean(f.hiddenFromOutput),
+      route_to_sub_on_multi: Boolean(f.routeToSubOnError),
       items,
     };
   });
@@ -303,11 +583,18 @@ export function templateToOmrSchema(
   const dropout_color =
     colorLower === 'red' || colorLower === 'green' || colorLower === 'blue' ? colorLower : 'none';
 
-  // Honor `.fmt` header mark threshold (`03` vs `04`) when user kept default minMarkDensity (48).
-  const effectiveMinDensity =
-    policy.minMarkDensity === 48 && tpl.markThreshold !== undefined && tpl.markThreshold <= 3
-      ? Math.max(12, tpl.markThreshold * 8 + 4)
-      : policy.minMarkDensity;
+  // Map `.fmt` header `markThreshold` (`h[2]`: `03` -> `lvl > 3`, `04` -> `lvl > 4`) onto our calibrated curve
+  // (`0..=4 -> lvl * 8`, `5..=8 -> 64..112`, `9..=16 -> 140..238`) when default `minMarkDensity === 48`.
+  let effectiveMinDensity = policy.minMarkDensity;
+  if (policy.minMarkDensity === 48 && tpl.markThreshold !== undefined) {
+    if (tpl.markThreshold <= 3) {
+      effectiveMinDensity = Math.max(12, tpl.markThreshold * 8 + 4);
+    } else if (tpl.markThreshold === 4) {
+      effectiveMinDensity = 48;
+    } else if (tpl.markThreshold <= 8) {
+      effectiveMinDensity = 64 + (tpl.markThreshold - 5) * 16 + 4;
+    }
+  }
 
   return {
     schema_version: 1,
@@ -315,6 +602,9 @@ export function templateToOmrSchema(
     form_name: tpl.name || 'Aktif Form',
     duplex,
     dropout_color,
+    orientation: isTplReverse ? 'T' : 'D',
+    multi_mark_char: tpl.multiMarkChar || '*',
+    blank_char: tpl.blankChar || ' ',
     grid: {
       front_rows: maxRows,
       front_cols: maxCols,
@@ -328,6 +618,7 @@ export function templateToOmrSchema(
       strong_mark_density: policy.strongMarkDensity,
       erasure_ratio: policy.erasureRatio,
       review_confidence_floor: policy.confidenceFloor,
+      saturation_density: 135,
     },
     fields,
   };

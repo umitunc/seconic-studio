@@ -31,6 +31,7 @@ interface DeviceTelemetryCardProps {
   templates: FormTemplate[];
   activeTemplateId: string;
   onSelectTemplate: (id: string) => void;
+  onChangeTemplateOrientation?: (orientation: 'D' | 'T') => void;
   onImportFmtFile: (file: File) => void;
   onOpenDesigner: () => void;
 }
@@ -57,6 +58,7 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
   templates,
   activeTemplateId,
   onSelectTemplate,
+  onChangeTemplateOrientation,
   onImportFmtFile,
   onOpenDesigner,
 }) => {
@@ -350,7 +352,7 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                         {isSelected && <Check size={12} color="#38bdf8" style={{ flexShrink: 0 }} />}
                       </div>
                       <span style={{ fontSize: 10, color: 'var(--uxigl-text-muted)' }}>
-                        {t.rows}×{t.cols} · {t.fields.length} alan
+                        {t.rows}×{t.cols} · {t.orientation === 'T' ? 'Sağ Şerit (T - 180°)' : 'Sol Şerit (D)'} · {t.fields.length} alan
                       </span>
                     </button>
                   );
@@ -360,10 +362,41 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
           )}
         </div>
         {activeTemplate && (
-          <div style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-            <span>Izgara: {activeTemplate.rows} satır × {activeTemplate.cols} sütun</span>
-            <span>{activeTemplate.fields.length} alan</span>
-          </div>
+          <>
+            <div style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Izgara: {activeTemplate.rows} çizgi × {activeTemplate.cols} sütun</span>
+              <span>{activeTemplate.fields.length} alan</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 2 }}>
+              <span style={{ fontSize: 11, color: 'var(--uxigl-text-muted)' }}>Şerit / Okuma Yönü</span>
+              <select
+                className="uxigl-select"
+                disabled={scanning}
+                style={{ fontSize: 11, padding: '3px 6px', width: 168 }}
+                value={activeTemplate.orientation === 'T' ? 'T' : 'D'}
+                onChange={(e) => onChangeTemplateOrientation?.(e.target.value === 'T' ? 'T' : 'D')}
+                title="Kağıdın okuma çizgileri (siyah şeritler) düz tutulduğunda soldaysa Düz (D), sağdaysa Ters (T) seçilir."
+              >
+                <option value="D">Sol Şerit • Düz (D)</option>
+                <option value="T">Sağ Şerit • Ters (T - 180°)</option>
+              </select>
+            </div>
+            {activeTemplate.orientation === 'T' && (
+              <div
+                style={{
+                  fontSize: 10.5,
+                  lineHeight: 1.35,
+                  color: '#d97706',
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: 6,
+                  padding: '5px 7px',
+                }}
+              >
+                Sağ şeritli form: Siyah okuma şeritleri <strong>sol kenara</strong> gelecek şekilde kağıtları 180° baş aşağı yerleştirin.
+              </div>
+            )}
+          </>
         )}
       </div>
 
