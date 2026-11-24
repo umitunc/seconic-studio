@@ -26,7 +26,7 @@ export const DensityBarChart: React.FC<DensityBarChartProps> = ({
             <div style={{ flex: 1, height: 10, borderRadius: 999, background: '#1e293b', overflow: 'hidden' }}>
               <div style={{ width: `${pct}%`, height: '100%', background: color }} />
             </div>
-            <span style={{ width: 32, textAlign: 'right', color: '#cbd5e1' }}>{val}</span>
+            <span style={{ width: 32, textAlign: 'right', color: 'var(--uxigl-text-muted)', fontWeight: 600 }}>{val}</span>
           </div>
         );
       })}

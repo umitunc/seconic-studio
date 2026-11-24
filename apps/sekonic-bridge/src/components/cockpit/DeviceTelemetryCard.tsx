@@ -370,7 +370,7 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 2 }}>
               <span style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <span>Şerit / Okuma Yönü</span>
+                <span>Kağıt Yerleşimi</span>
                 <button
                   type="button"
                   onClick={() => setShowOrientationHelp((v) => !v)}
@@ -388,17 +388,28 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                   <HelpCircle size={13} />
                 </button>
               </span>
-              <select
-                className="uxigl-select"
-                disabled={scanning}
-                style={{ fontSize: 11, padding: '3px 6px', width: 168 }}
-                value={activeTemplate.orientation === 'T' ? 'T' : 'D'}
-                onChange={(e) => onChangeTemplateOrientation?.(e.target.value === 'T' ? 'T' : 'D')}
-                title="Kağıdın okuma çizgileri (siyah şeritler) düz tutulduğunda soldaysa Düz (D), sağdaysa Ters (T) seçilir."
+              <span
+                title="Şablon (.fmt) başlığından otomatik algılanır; gerekirse Form Tasarımcısından değiştirilebilir."
+                style={{
+                  fontSize: 10.5,
+                  fontWeight: 600,
+                  padding: '2px 7px',
+                  borderRadius: 999,
+                  background:
+                    activeTemplate.orientation === 'T'
+                      ? 'rgba(245, 158, 11, 0.14)'
+                      : 'rgba(14, 165, 233, 0.12)',
+                  color: activeTemplate.orientation === 'T' ? '#d97706' : '#0284c7',
+                  border:
+                    activeTemplate.orientation === 'T'
+                      ? '1px solid rgba(245, 158, 11, 0.35)'
+                      : '1px solid rgba(14, 165, 233, 0.3)',
+                }}
               >
-                <option value="D">Sol Şerit • Düz (D)</option>
-                <option value="T">Sağ Şerit • Ters (T - 180°)</option>
-              </select>
+                {activeTemplate.orientation === 'T'
+                  ? 'Sağ Şerit (T) • 180° Ters Koy'
+                  : 'Sol Şerit (D) • Düz Koy'}
+              </span>
             </div>
             {showOrientationHelp && (
               <div
@@ -414,21 +425,16 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                 }}
               >
                 <div style={{ fontSize: 10.5, lineHeight: 1.38, color: 'var(--uxigl-text-muted)' }}>
-                  Cihazın siyah şerit sensörü <strong style={{ color: 'var(--uxigl-text)' }}>sol taraftadır</strong>. Kağıdı tepsiye koyarken şeritler daima{' '}
-                  <strong style={{ color: '#0284c7' }}>sol kenara</strong> gelmelidir:
+                  Yön bilgisi <strong style={{ color: 'var(--uxigl-text)' }}>.fmt dosyasından otomatik alınır</strong>. Cihazın sensörü{' '}
+                  <strong style={{ color: 'var(--uxigl-text)' }}>solda</strong> olduğu için siyah şeritler daima sol kenara gelecek şekilde yerleştirilir:
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                   {/* Sol Şerit • Düz (D) Görseli */}
-                  <button
-                    type="button"
-                    disabled={scanning}
-                    onClick={() => onChangeTemplateOrientation?.('D')}
+                  <div
                     style={{
-                      textAlign: 'left',
                       padding: '6px',
                       borderRadius: 7,
-                      cursor: scanning ? 'default' : 'pointer',
                       border:
                         activeTemplate.orientation !== 'T'
                           ? '1.5px solid #0ea5e9'
@@ -437,23 +443,19 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                         activeTemplate.orientation !== 'T'
                           ? 'rgba(14, 165, 233, 0.12)'
                           : 'rgba(148, 163, 184, 0.06)',
+                      opacity: activeTemplate.orientation !== 'T' ? 1 : 0.6,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
                       gap: 4,
-                      color: 'inherit',
                     }}
                   >
                     <svg width="88" height="72" viewBox="0 0 88 72" aria-label="Sol şerit düz form yerleşimi">
-                      {/* Sensör işareti */}
                       <rect x="2" y="10" width="4" height="54" rx="2" fill="#0ea5e9" opacity="0.3" />
-                      {/* Kağıt */}
                       <rect x="10" y="10" width="54" height="58" rx="3" fill="#ffffff" stroke="#94a3b8" strokeWidth="1.2" />
-                      {/* Sol tarafta siyah okuma şeritleri */}
                       {[14, 20, 26, 32, 38, 44, 50, 56, 62].map((y) => (
                         <rect key={y} x="13" y={y} width="4.5" height="3" rx="0.6" fill="#0f172a" />
                       ))}
-                      {/* Düz başlık ve baloncuklar */}
                       <rect x="21" y="15" width="38" height="5" rx="1" fill="#e11d48" opacity="0.82" />
                       <text x="40" y="19" textAnchor="middle" fontSize="4.5" fontWeight="700" fill="#ffffff">
                         AD SOYAD
@@ -468,7 +470,6 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                           <circle cx="58" cy={y} r="1.7" fill="#cbd5e1" />
                         </g>
                       ))}
-                      {/* Giriş yönü oku */}
                       <path d="M74 56 L74 18 M70 23 L74 17 L78 23" stroke="#10b981" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
                       <text x="74" y="66" textAnchor="middle" fontSize="6" fontWeight="700" fill="#10b981">
                         GİRİŞ
@@ -480,18 +481,13 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                     <div style={{ fontSize: 9.5, color: 'var(--uxigl-text-muted)', textAlign: 'center', lineHeight: 1.25 }}>
                       Yazılar düz, siyah şeritler solda okutulur.
                     </div>
-                  </button>
+                  </div>
 
                   {/* Sağ Şerit • Ters (T - 180°) Görseli */}
-                  <button
-                    type="button"
-                    disabled={scanning}
-                    onClick={() => onChangeTemplateOrientation?.('T')}
+                  <div
                     style={{
-                      textAlign: 'left',
                       padding: '6px',
                       borderRadius: 7,
-                      cursor: scanning ? 'default' : 'pointer',
                       border:
                         activeTemplate.orientation === 'T'
                           ? '1.5px solid #f59e0b'
@@ -500,23 +496,19 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                         activeTemplate.orientation === 'T'
                           ? 'rgba(245, 158, 11, 0.13)'
                           : 'rgba(148, 163, 184, 0.06)',
+                      opacity: activeTemplate.orientation === 'T' ? 1 : 0.6,
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
                       gap: 4,
-                      color: 'inherit',
                     }}
                   >
                     <svg width="88" height="72" viewBox="0 0 88 72" aria-label="Sağ şerit ters form yerleşimi">
-                      {/* Sensör işareti */}
                       <rect x="2" y="10" width="4" height="54" rx="2" fill="#f59e0b" opacity="0.35" />
-                      {/* 180° çevrilmiş kağıt */}
                       <rect x="10" y="10" width="54" height="58" rx="3" fill="#ffffff" stroke="#94a3b8" strokeWidth="1.2" />
-                      {/* Çevrildiği için sola gelen siyah şeritler */}
                       {[14, 20, 26, 32, 38, 44, 50, 56, 62].map((y) => (
                         <rect key={y} x="13" y={y} width="4.5" height="3" rx="0.6" fill="#0f172a" />
                       ))}
-                      {/* Baş aşağı duran başlık (180° döndürülmüş) */}
                       <rect x="21" y="58" width="38" height="5" rx="1" fill="#e11d48" opacity="0.82" />
                       <g transform="rotate(180 40 60.5)">
                         <text x="40" y="62.2" textAnchor="middle" fontSize="4.5" fontWeight="700" fill="#ffffff">
@@ -533,7 +525,6 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                           <circle cx="58" cy={y} r="1.7" fill="#cbd5e1" />
                         </g>
                       ))}
-                      {/* 180° çevirme + giriş oku */}
                       <text x="74" y="16" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="#d97706">
                         180°
                       </text>
@@ -548,7 +539,7 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
                     <div style={{ fontSize: 9.5, color: 'var(--uxigl-text-muted)', textAlign: 'center', lineHeight: 1.25 }}>
                       Şerit sağda basılıdır; 180° baş aşağı konur.
                     </div>
-                  </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -557,7 +548,7 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
       </div>
 
       <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, cursor: 'pointer' }}>
-        <span style={{ color: '#cbd5e1' }}>Sanal Simülatör Modu</span>
+        <span style={{ color: 'var(--uxigl-text-muted)', fontWeight: 500 }}>Sanal Simülatör Modu</span>
         <input
           type="checkbox"
           checked={simulatorMode}
