@@ -26,15 +26,41 @@ pub fn discover_usb_scanners() -> Result<Vec<DiscoveredScanner>, SekonicError> {
     Ok(found)
 }
 
-pub struct NativeUsbTransport {
-    interface: nusb::Interface,
-    ep_out: u8,
-    ep_in_ctrl: u8,
-    ep_in_image: Option<u8>,
+pub enum NativeUsbTransport {
+    Nusb {
+        interface: nusb::Interface,
+        ep_out: u8,
+        ep_in_ctrl: u8,
+        ep_in_image: Option<u8>,
+    },
+    #[cfg(target_os = "windows")]
+    Usbscan(crate::native_usbscan::WindowsUsbscanTransport),
 }
 
 impl NativeUsbTransport {
     pub fn open_by_pid(pid: u16) -> Result<Self, SekonicError> {
+        match Self::open_nusb_by_pid(pid) {
+            Ok(transport) => Ok(transport),
+            Err(nusb_err) => {
+                #[cfg(target_os = "windows")]
+                {
+                    if should_try_usbscan_fallback(&nusb_err) {
+                        match crate::native_usbscan::WindowsUsbscanTransport::open_by_pid(pid) {
+                            Ok(usbscan) => return Ok(Self::Usbscan(usbscan)),
+                            Err(usbscan_err) => {
+                                return Err(SekonicError::Transport(format!(
+                                    "{nusb_err} (usbscan fallback also failed: {usbscan_err})"
+                                )));
+                            }
+                        }
+                    }
+                }
+                Err(nusb_err)
+            }
+        }
+    }
+
+    fn open_nusb_by_pid(pid: u16) -> Result<Self, SekonicError> {
         let dev_info = nusb::list_devices()
             .map_err(|e| SekonicError::Transport(e.to_string()))?
             .find(|d| d.vendor_id() == VID_SEKONIC && d.product_id() == pid)
@@ -79,7 +105,7 @@ impl NativeUsbTransport {
             .claim_interface(iface_num)
             .map_err(|e| SekonicError::Transport(format!("claim interface failed: {e}")))?;
 
-        Ok(Self {
+        Ok(Self::Nusb {
             interface,
             ep_out: ep_out.unwrap_or(0x01),
             ep_in_ctrl: ep_in_ctrl.unwrap_or(0x81),
@@ -88,18 +114,35 @@ impl NativeUsbTransport {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn should_try_usbscan_fallback(err: &SekonicError) -> bool {
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("usbscan")
+        || msg.contains("not winusb")
+        || msg.contains("claim interface failed")
+        || msg.contains("usb open failed")
+}
+
 #[async_trait]
 impl ScannerTransport for NativeUsbTransport {
     async fn write_control(&mut self, buf: &[u8], timeout: Duration) -> Result<usize, SekonicError> {
-        let fut = self.interface.bulk_out(self.ep_out, buf.to_vec());
-        let comp = tokio::time::timeout(timeout, fut)
-            .await
-            .map_err(|_| SekonicError::Timeout {
-                timeout_ms: timeout.as_millis() as u64,
-            })?;
-        comp.status
-            .map_err(|e| SekonicError::Transport(format!("bulk out error: {e}")))?;
-        Ok(comp.data.actual_length())
+        match self {
+            Self::Nusb {
+                interface, ep_out, ..
+            } => {
+                let fut = interface.bulk_out(*ep_out, buf.to_vec());
+                let comp = tokio::time::timeout(timeout, fut)
+                    .await
+                    .map_err(|_| SekonicError::Timeout {
+                        timeout_ms: timeout.as_millis() as u64,
+                    })?;
+                comp.status
+                    .map_err(|e| SekonicError::Transport(format!("bulk out error: {e}")))?;
+                Ok(comp.data.actual_length())
+            }
+            #[cfg(target_os = "windows")]
+            Self::Usbscan(t) => t.write_control(buf, timeout).await,
+        }
     }
 
     async fn read_control(
@@ -107,19 +150,27 @@ impl ScannerTransport for NativeUsbTransport {
         buf: &mut [u8],
         timeout: Duration,
     ) -> Result<usize, SekonicError> {
-        let fut = self
-            .interface
-            .bulk_in(self.ep_in_ctrl, RequestBuffer::new(buf.len()));
-        let comp = tokio::time::timeout(timeout, fut)
-            .await
-            .map_err(|_| SekonicError::Timeout {
-                timeout_ms: timeout.as_millis() as u64,
-            })?;
-        comp.status
-            .map_err(|e| SekonicError::Transport(format!("bulk in error: {e}")))?;
-        let n = comp.data.len().min(buf.len());
-        buf[..n].copy_from_slice(&comp.data[..n]);
-        Ok(n)
+        match self {
+            Self::Nusb {
+                interface,
+                ep_in_ctrl,
+                ..
+            } => {
+                let fut = interface.bulk_in(*ep_in_ctrl, RequestBuffer::new(buf.len()));
+                let comp = tokio::time::timeout(timeout, fut)
+                    .await
+                    .map_err(|_| SekonicError::Timeout {
+                        timeout_ms: timeout.as_millis() as u64,
+                    })?;
+                comp.status
+                    .map_err(|e| SekonicError::Transport(format!("bulk in error: {e}")))?;
+                let n = comp.data.len().min(buf.len());
+                buf[..n].copy_from_slice(&comp.data[..n]);
+                Ok(n)
+            }
+            #[cfg(target_os = "windows")]
+            Self::Usbscan(t) => t.read_control(buf, timeout).await,
+        }
     }
 
     async fn read_image_pipe(
@@ -127,24 +178,38 @@ impl ScannerTransport for NativeUsbTransport {
         buf: &mut [u8],
         timeout: Duration,
     ) -> Result<usize, SekonicError> {
-        let ep = self
-            .ep_in_image
-            .ok_or_else(|| SekonicError::Transport("device has no secondary image pipe".into()))?;
-        let fut = self.interface.bulk_in(ep, RequestBuffer::new(buf.len()));
-        let comp = tokio::time::timeout(timeout, fut)
-            .await
-            .map_err(|_| SekonicError::Timeout {
-                timeout_ms: timeout.as_millis() as u64,
-            })?;
-        comp.status
-            .map_err(|e| SekonicError::Transport(format!("image pipe error: {e}")))?;
-        let n = comp.data.len().min(buf.len());
-        buf[..n].copy_from_slice(&comp.data[..n]);
-        Ok(n)
+        match self {
+            Self::Nusb {
+                interface,
+                ep_in_image,
+                ..
+            } => {
+                let ep = ep_in_image.ok_or_else(|| {
+                    SekonicError::Transport("device has no secondary image pipe".into())
+                })?;
+                let fut = interface.bulk_in(ep, RequestBuffer::new(buf.len()));
+                let comp = tokio::time::timeout(timeout, fut)
+                    .await
+                    .map_err(|_| SekonicError::Timeout {
+                        timeout_ms: timeout.as_millis() as u64,
+                    })?;
+                comp.status
+                    .map_err(|e| SekonicError::Transport(format!("image pipe error: {e}")))?;
+                let n = comp.data.len().min(buf.len());
+                buf[..n].copy_from_slice(&comp.data[..n]);
+                Ok(n)
+            }
+            #[cfg(target_os = "windows")]
+            Self::Usbscan(t) => t.read_image_pipe(buf, timeout).await,
+        }
     }
 
     async fn purge(&mut self) -> Result<(), SekonicError> {
-        Ok(())
+        match self {
+            Self::Nusb { .. } => Ok(()),
+            #[cfg(target_os = "windows")]
+            Self::Usbscan(t) => t.purge().await,
+        }
     }
 
     fn uses_serial_framing(&self) -> bool {

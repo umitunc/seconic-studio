@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+#![cfg_attr(not(target_os = "windows"), forbid(unsafe_code))]
 
 //! Unified USB Bulk / Serial / In-Memory transport layer for Sekonic scanners.
 
@@ -10,6 +10,8 @@ pub mod usb_ids;
 pub mod native_serial;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native_usb;
+#[cfg(target_os = "windows")]
+pub mod native_usbscan;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native_usbskomr;
 

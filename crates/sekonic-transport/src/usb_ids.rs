@@ -9,6 +9,7 @@ pub const PID_SR55D: u16 = 0x2000;
 pub const PID_SR45C_38C: u16 = 0x2002;
 pub const PID_SMF_HYBRID: u16 = 0x2003;
 pub const PID_SC1500_HYBRID: u16 = 0x3005;
+pub const PID_SR55: u16 = 0x3006;
 pub const PID_SP100: u16 = 0x5000;
 
 /// Verified Windows DeviceInterfaceGUIDs from SkCommIo.dll / OMRAPI.DLL
@@ -26,6 +27,7 @@ pub fn classify_pid(pid: u16) -> Option<(DeviceFamily, &'static str)> {
         PID_SR45C_38C => Some((DeviceFamily::FamilyBCisImage, "SEKONIC SR-45C/38C")),
         PID_SMF_HYBRID => Some((DeviceFamily::FamilyBCisImage, "SEKONIC SMF/Hybrid")),
         PID_SC1500_HYBRID => Some((DeviceFamily::FamilyBCisImage, "SEKONIC SC-1500")),
+        PID_SR55 => Some((DeviceFamily::FamilyAOmrGrid, "SEKONIC SR-55")),
         PID_SP100 => Some((DeviceFamily::FamilyBCisImage, "SEKONIC SP-100")),
         _ => None,
     }
