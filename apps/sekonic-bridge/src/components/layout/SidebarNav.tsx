@@ -74,7 +74,7 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--uxigl-text-muted)', paddingLeft: 6 }}>
-        v0.4.1 • Köprü: :17441
+        v0.4.2 • Köprü: :17441
       </div>
     </aside>
   );
