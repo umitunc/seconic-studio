@@ -189,7 +189,12 @@ export function loadTemplates(): FormTemplate[] {
     if (raw) {
       const parsed = JSON.parse(raw) as FormTemplate[];
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const normalized = parsed.map(normalizeSavedTemplate);
+        // Built-in templates (`tpl_builtin_*`) always come from code so coordinate fixes
+        // reach users who already have an older copy saved in localStorage.
+        const builtinById = new Map(
+          DEFAULT_TEMPLATES.filter((b) => b.id.startsWith('tpl_builtin_')).map((b) => [b.id, b]),
+        );
+        const normalized = parsed.map((t) => builtinById.get(t.id) ?? normalizeSavedTemplate(t));
         const existingIds = new Set(normalized.map((t) => t.id));
         const missingBuiltins = DEFAULT_TEMPLATES.filter((b) => !existingIds.has(b.id));
         return [...normalized, ...missingBuiltins];
