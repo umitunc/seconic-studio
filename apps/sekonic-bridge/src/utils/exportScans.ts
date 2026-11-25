@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import { ScannedRow } from '../types/scanner';
 import { computeFieldOutputWidth, FormTemplate } from './formTemplates';
+import { encodeWindows1254 } from './encoding';
 
 export type ExportFormat = 'xlsx' | 'txt' | 'json';
 
@@ -35,7 +36,12 @@ function buildTemplateRecord(row: ScannedRow, template: FormTemplate): Record<st
       field.fieldType === 'subject_questions'
         ? (row.answers?.[field.key] ?? '')
         : (row.decodedFields?.[field.key] ?? '');
-    record[field.label] = field.fieldType === 'subject_questions' ? raw : raw.trim();
+    const val = field.fieldType === 'subject_questions' ? raw : raw.trim();
+    if (field.label in record) {
+      record[field.label] = `${record[field.label]}${val}`;
+    } else {
+      record[field.label] = val;
+    }
   }
   return record;
 }
@@ -86,7 +92,12 @@ export function exportScannedRows(
     return;
   }
 
-  const lines = ordered.map((r) => {
+  // Exclude structural error sheets (`Çizgi Hatası` / `Ters Yön`) when valid rows exist,
+  // matching `SekOku.exe` which routes bad-line-count sheets to `.hat` instead of `.txt`.
+  const validRows = ordered.filter((r) => r.status !== 'Çizgi Hatası' && r.status !== 'Ters Yön');
+  const txtRows = validRows.length > 0 ? validRows : ordered;
+
+  const lines = txtRows.map((r) => {
     if (hasTemplate && template) {
       return template.fields
         .filter((field) => !field.hiddenFromOutput)
@@ -103,8 +114,11 @@ export function exportScannedRows(
     return `${r.studentId}${r.studentName}${r.booklet}${r.answersSummary}`;
   });
 
-  const blob = new Blob([lines.join('\r\n')], {
-    type: 'text/plain;charset=utf-8',
+  // Match `SekOku.exe` byte-for-byte: Windows-1254 (1 byte per Turkish char) + trailing CRLF.
+  const crlfPayload = `${lines.join('\r\n')}\r\n`;
+  const ansiBytes = encodeWindows1254(crlfPayload);
+  const blob = new Blob([ansiBytes.buffer as ArrayBuffer], {
+    type: 'text/plain;charset=windows-1254',
   });
   triggerDownload(blob, `${baseName}.txt`);
 }

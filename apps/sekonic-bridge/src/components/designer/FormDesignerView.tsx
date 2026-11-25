@@ -18,6 +18,7 @@ import {
   parseFmtOrBldm,
   serializeTemplateToFmt,
 } from '../../utils/formTemplates';
+import { decodeAutoTurkishText, encodeWindows1254 } from '../../utils/encoding';
 
 export type { DesignerField, FormTemplate };
 
@@ -280,7 +281,7 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
     const imported: FormTemplate[] = [];
     for (const file of Array.from(fileList)) {
       const buf = await file.arrayBuffer();
-      const txt = new TextDecoder('windows-1254').decode(buf);
+      const txt = decodeAutoTurkishText(buf);
       const parsed = parseFmtOrBldm(txt);
       if (parsed) {
         const baseName = file.name.replace(/\.(fmt|bldm)$/i, '');
@@ -311,7 +312,8 @@ export const FormDesignerView: React.FC<FormDesignerViewProps> = ({
 
   const exportFmt = () => {
     const fmtText = serializeTemplateToFmt(activeTemplate);
-    const blob = new Blob([fmtText], { type: 'text/plain;charset=utf-8' });
+    const ansiBytes = encodeWindows1254(fmtText);
+    const blob = new Blob([ansiBytes.buffer as ArrayBuffer], { type: 'text/plain;charset=windows-1254' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${activeTemplate.name}.fmt`;

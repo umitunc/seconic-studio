@@ -324,6 +324,26 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
                 }
             }
 
+            // Detect reversed sheet (timing stripes sitting on the right paper edge instead of left):
+            // When the left sensor sees far fewer timing marks than expected (< 50% of template rows)
+            // while the rightmost paper-covered channel (immediately left of the black platen) reads
+            // predominantly dark marks (>= 75% of observed rows), the sheet is almost certainly fed
+            // with its timing track on the wrong edge.
+            let right_paper_col = (43..48).rfind(|&i| !platen_mask[i]);
+            let right_edge_timing = if let Some(rc) = right_paper_col {
+                if tokens.len() >= 3 && usize::from(observed_rows) * 2 < r_max {
+                    let dark_right = tokens
+                        .iter()
+                        .filter(|row| row.get(rc).map(|&b| Self::decode_md_level(b) >= 10).unwrap_or(false))
+                        .count();
+                    dark_right * 100 >= tokens.len() * 75
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
             for (r, row_bits) in tokens.iter().enumerate() {
                 if r < r_max {
                     for (c, &ch) in row_bits.iter().take(c_max).enumerate() {
@@ -335,7 +355,7 @@ impl<T: ScannerTransport> OmrScannerDriver<T> {
                     }
                 }
             }
-            (observed_rows, false)
+            (observed_rows, right_edge_timing)
         } else {
             let src_stride = if c_max < 48 && body.len() >= r_max * 48 {
                 48

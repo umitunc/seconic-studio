@@ -103,6 +103,7 @@ fn default_runtime_schema() -> OmrFormSchema {
                 allow_multiple_marks: false,
                 hidden_from_output: false,
                 route_to_sub_on_multi: false,
+                route_to_sub_on_blank: false,
                 items: vec![BubbleGroup {
                     index: 1,
                     options: (0..5)
@@ -122,6 +123,7 @@ fn default_runtime_schema() -> OmrFormSchema {
                 allow_multiple_marks: false,
                 hidden_from_output: false,
                 route_to_sub_on_multi: false,
+                route_to_sub_on_blank: false,
                 items: (0..10u16)
                     .map(|q| BubbleGroup {
                         index: q + 1,

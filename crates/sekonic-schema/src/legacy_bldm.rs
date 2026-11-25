@@ -121,6 +121,7 @@ pub fn parse_bldm(form_id: &str, content: &str) -> Result<OmrFormSchema, Sekonic
             allow_multiple_marks: false,
             hidden_from_output: false,
             route_to_sub_on_multi: false,
+            route_to_sub_on_blank: false,
             items: groups,
         }],
     };

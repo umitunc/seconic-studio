@@ -47,6 +47,7 @@ async fn test_e2e_2000_sheets_erasure_substacker_and_network_outage() {
                 allow_multiple_marks: false,
                 hidden_from_output: false,
                 route_to_sub_on_multi: false,
+                route_to_sub_on_blank: false,
                 items: vec![BubbleGroup {
                     index: 1,
                     options: (0..5)
@@ -66,6 +67,7 @@ async fn test_e2e_2000_sheets_erasure_substacker_and_network_outage() {
                 allow_multiple_marks: false,
                 hidden_from_output: false,
                 route_to_sub_on_multi: false,
+                route_to_sub_on_blank: false,
                 items: vec![BubbleGroup {
                     index: 1,
                     options: (0..5)

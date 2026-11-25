@@ -11,17 +11,16 @@ export const AnswerDetailsPanel: React.FC<AnswerDetailsPanelProps> = ({ row, onC
   if (!row) return null;
 
   const details =
-    row.questionDetails ??
-    row.answersSummary
-      .replace(/\s+/g, '')
-      .split('')
-      .map((ch, idx) => ({
-        q: idx + 1,
-        answer: ch === ' ' ? '-' : ch,
-        state: (ch === '*' ? 'multi' : ch === ' ' ? 'blank' : 'ok') as 'ok' | 'erased' | 'multi' | 'blank',
-        density: ch === ' ' ? 12 : 205,
-        erasedOption: undefined as string | undefined,
-      }));
+    row.questionDetails && row.questionDetails.length > 0
+      ? row.questionDetails
+      : Array.from(row.answersSummary).map((ch, idx) => ({
+          q: idx + 1,
+          subject: undefined as string | undefined,
+          answer: ch === ' ' ? '-' : ch,
+          state: (ch === '*' ? 'multi' : ch === ' ' ? 'blank' : 'ok') as 'ok' | 'erased' | 'multi' | 'blank',
+          density: ch === ' ' ? 0 : 205,
+          erasedOption: undefined as string | undefined,
+        }));
 
   return (
     <aside
@@ -54,9 +53,9 @@ export const AnswerDetailsPanel: React.FC<AnswerDetailsPanelProps> = ({ row, onC
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', paddingRight: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {details.map((item) => (
+        {details.map((item, idx) => (
           <div
-            key={item.q}
+            key={`${item.subject ?? 'q'}_${item.q}_${idx}`}
             className="uxigl-subcard"
             style={{
               padding: '5px 9px',
@@ -64,10 +63,11 @@ export const AnswerDetailsPanel: React.FC<AnswerDetailsPanelProps> = ({ row, onC
               justifyContent: 'space-between',
               alignItems: 'center',
               fontSize: 12,
+              gap: 6,
             }}
           >
-            <span style={{ color: 'var(--uxigl-text-muted)', fontWeight: 600, width: 32 }}>
-              {item.q}.
+            <span style={{ color: 'var(--uxigl-text-muted)', fontWeight: 600, minWidth: 32, fontSize: 11 }}>
+              {item.subject ? `${item.subject.slice(0, 4)} ` : ''}{item.q}.
             </span>
             <span style={{ fontWeight: 700, flex: 1 }}>
               {item.answer}

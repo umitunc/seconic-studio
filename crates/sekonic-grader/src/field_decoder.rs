@@ -134,7 +134,7 @@ pub fn grade_sheet(schema: &OmrFormSchema, capture: &RawSheetCapture) -> GradedS
                     for _ in 0..token_width {
                         compact.push(blank_ch);
                     }
-                    if field.required_for_valid_sheet {
+                    if field.required_for_valid_sheet || field.route_to_sub_on_blank {
                         field_valid = false;
                     }
                 }
@@ -161,7 +161,11 @@ pub fn grade_sheet(schema: &OmrFormSchema, capture: &RawSheetCapture) -> GradedS
             decisions.push(dec);
         }
 
-        if (field.required_for_valid_sheet || field.route_to_sub_on_multi) && !field_valid {
+        if (field.required_for_valid_sheet
+            || field.route_to_sub_on_multi
+            || field.route_to_sub_on_blank)
+            && !field_valid
+        {
             missing_required_field = true;
         }
 

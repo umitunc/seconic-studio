@@ -62,6 +62,7 @@ mod tests {
                     allow_multiple_marks: false,
                     hidden_from_output: false,
                     route_to_sub_on_multi: false,
+                    route_to_sub_on_blank: false,
                     items: vec![BubbleGroup {
                         index: 1,
                         options: (0..4)
@@ -81,6 +82,7 @@ mod tests {
                     allow_multiple_marks: false,
                     hidden_from_output: false,
                     route_to_sub_on_multi: false,
+                    route_to_sub_on_blank: false,
                     items: q_items,
                 },
             ],
@@ -222,6 +224,7 @@ mod tests {
                     allow_multiple_marks: false,
                     hidden_from_output: false,
                     route_to_sub_on_multi: false,
+                    route_to_sub_on_blank: false,
                     items: vec![BubbleGroup {
                         index: 1,
                         options: vec![
@@ -239,6 +242,7 @@ mod tests {
                     allow_multiple_marks: true,
                     hidden_from_output: false,
                     route_to_sub_on_multi: false,
+                    route_to_sub_on_blank: false,
                     items: vec![BubbleGroup {
                         index: 1,
                         options: (0..6)
@@ -265,5 +269,94 @@ mod tests {
         assert_eq!(graded.decoded_fields.get("sinif").map(String::as_str), Some("10"));
         assert_eq!(graded.answers.get("cevaplar").map(String::as_str), Some("AD    "));
         assert!(!graded.needs_operator_review);
+    }
+
+    #[test]
+    fn test_x2_blank_digits_and_light_erasure_parity() {
+        // 1. Medium-light mark (`lvl 7 -> 96 < t_strong 115`) vs faint erasure (`lvl 5 -> 64`):
+        //    SekOku.exe picks the darker mark (`96 > 64`, ratio 0.667 <= 0.82) rather than MultiMark (`*`).
+        let mut m = Matrix2D::new(4, 6, false);
+        m.set(SheetSide::Front, 0, 0, 64); // lvl 5 erasure on A
+        m.set(SheetSide::Front, 0, 2, 96); // lvl 7 real mark on C
+        let grp = BubbleGroup {
+            index: 1,
+            options: (0..5)
+                .map(|c| BubbleCoord {
+                    label: ((b'A' + c as u8) as char).to_string(),
+                    row: 0,
+                    col: c,
+                })
+                .collect(),
+        };
+        let dec = solve_bubble_group(&m, SheetSide::Front, &grp, 0, &ThresholdPolicy::default());
+        assert_eq!(dec.state, BubbleState::MarkedWithErasure);
+        assert_eq!(dec.value.as_deref(), Some("C"));
+
+        // 2. X2 mode (`required_for_valid_sheet = false, route_to_sub_on_blank = false`):
+        //    Partially blank student ID (e.g. " 2075") must NOT route to Sub-Stacker!
+        let mut m2 = Matrix2D::new(10, 5, false);
+        m2.set(SheetSide::Front, 2, 1, 210); // col 1 = '2'
+        m2.set(SheetSide::Front, 0, 2, 210); // col 2 = '0'
+        m2.set(SheetSide::Front, 7, 3, 210); // col 3 = '7'
+        m2.set(SheetSide::Front, 5, 4, 210); // col 4 = '5'
+        let x2_schema = OmrFormSchema {
+            schema_version: 1,
+            form_id: "X2-BLANK".into(),
+            form_name: "X2 Blank Test".into(),
+            duplex: false,
+            dropout_color: DropoutColor::Red,
+            orientation: FormOrientation::Straight,
+            multi_mark_char: "*".into(),
+            blank_char: " ".into(),
+            grid: GridGeometry {
+                front_rows: 10,
+                front_cols: 5,
+                back_rows: 0,
+                back_cols: 0,
+                width_mm: 210.0,
+                height_mm: 297.0,
+            },
+            threshold_policy: ThresholdPolicy::default(),
+            fields: vec![FieldDefinition {
+                key: "ogrenci_no".into(),
+                field_type: FieldType::StudentId,
+                side: SheetSide::Front,
+                required_for_valid_sheet: false,
+                allow_multiple_marks: false,
+                hidden_from_output: false,
+                route_to_sub_on_multi: false,
+                route_to_sub_on_blank: false,
+                items: (0..5u16)
+                    .map(|c| BubbleGroup {
+                        index: c + 1,
+                        options: (0..10u16)
+                            .map(|r| BubbleCoord {
+                                label: r.to_string(),
+                                row: r,
+                                col: c,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            }],
+        };
+        let cap2 = RawSheetCapture {
+            seq_no: 1,
+            timestamp_ms: 0,
+            barcode: None,
+            matrix: m2,
+            raw_wire_sample: None,
+            observed_front_rows: Some(10),
+            right_edge_timing_detected: false,
+        };
+        let g2 = grade_sheet(&x2_schema, &cap2);
+        assert_eq!(g2.decoded_fields.get("ogrenci_no").map(String::as_str), Some(" 2075"));
+        assert!(!g2.missing_required_field);
+
+        // 3. S/U mode (`route_to_sub_on_blank = true`) MUST route to Sub-Stacker on blank!
+        let mut s_schema = x2_schema;
+        s_schema.fields[0].route_to_sub_on_blank = true;
+        let g3 = grade_sheet(&s_schema, &cap2);
+        assert!(g3.missing_required_field);
     }
 }

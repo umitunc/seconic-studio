@@ -100,6 +100,8 @@ pub struct FieldDefinition {
     pub hidden_from_output: bool,
     #[serde(default)]
     pub route_to_sub_on_multi: bool,
+    #[serde(default)]
+    pub route_to_sub_on_blank: bool,
     pub items: Vec<BubbleGroup>,
 }
 

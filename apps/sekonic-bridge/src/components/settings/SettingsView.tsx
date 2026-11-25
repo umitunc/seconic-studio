@@ -229,9 +229,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             type="number"
             className="uxigl-select"
             style={{ width: 70 }}
+            min={5}
+            max={16}
             value={hw.densityUpperLimit}
             disabled={!hw.densityEnabled}
-            onChange={(e) => onHwChange({ ...hw, densityUpperLimit: Number(e.target.value) })}
+            title="SekOku Koyuluk Üst Sınırı (5–16, varsayılan 9)"
+            onChange={(e) => onHwChange({ ...hw, densityUpperLimit: Math.max(5, Math.min(16, Number(e.target.value) || 9)) })}
           />
         </div>
 
@@ -260,7 +263,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <input
             type="range"
             min={0.2}
-            max={0.7}
+            max={0.95}
             step={0.02}
             value={policy.erasureRatio}
             onChange={(e) => onPolicyChange({ ...policy, erasureRatio: Number(e.target.value) })}

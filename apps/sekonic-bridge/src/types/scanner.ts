@@ -9,6 +9,8 @@ export type SheetStatus =
 
 export interface QuestionDetail {
   q: number;
+  subject?: string;
+  fieldKey?: string;
   answer: string;
   state: 'ok' | 'erased' | 'multi' | 'blank';
   density: number;
@@ -31,8 +33,11 @@ export interface ScannedRow {
   questionDetails?: QuestionDetail[];
   rawMatrixB64: string;
   rawWireSample?: string;
+  observedFrontRows?: number;
   flaggedQuestion?: {
     q: number;
+    fieldKey?: string;
+    subject?: string;
     densities: number[];
     erasedLabel?: string;
     selectedLabel?: string;

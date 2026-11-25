@@ -39,10 +39,21 @@ export function isNewerSemver(latest: string, current: string): boolean {
   return false;
 }
 
+export interface RawBubbleDecision {
+  index: number;
+  state: 'blank' | 'marked' | 'marked_with_erasure' | 'multi_mark';
+  value?: string | null;
+  multi_values?: string[];
+  erased_label?: string | null;
+  confidence: number;
+  densities: number[];
+}
+
 export interface RawGradedSheet {
   seq_no: number;
   decoded_fields?: Record<string, string>;
   answers?: Record<string, string>;
+  answer_details?: Record<string, RawBubbleDecision[]>;
   missing_required_field?: boolean;
   needs_operator_review?: boolean;
   warnings?: string[];
@@ -181,6 +192,8 @@ export class LocalAgentClient {
     baudRate: number;
     simulatorMode: boolean;
     enableBarcode?: boolean;
+    stopOnError?: boolean;
+    useSubStacker?: boolean;
     schema?: Record<string, unknown>;
   }): Promise<void> {
     await this.sendRequest({
@@ -189,6 +202,8 @@ export class LocalAgentClient {
       baud_rate: opts.baudRate,
       simulator_mode: opts.simulatorMode,
       enable_barcode: Boolean(opts.enableBarcode),
+      stop_on_error: Boolean(opts.stopOnError),
+      use_sub_stacker: opts.useSubStacker ?? true,
       schema: opts.schema ?? null,
     });
   }

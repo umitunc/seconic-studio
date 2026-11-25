@@ -34,6 +34,10 @@ interface DeviceTelemetryCardProps {
   onChangeTemplateOrientation?: (orientation: 'D' | 'T') => void;
   onImportFmtFile: (file: File) => void;
   onOpenDesigner: () => void;
+  suggestedTemplates?: FormTemplate[];
+  onApplySuggestedTemplate?: (id: string) => void;
+  canRegradeRows?: boolean;
+  onRegradeWithActiveTemplate?: () => void;
 }
 
 export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
@@ -61,6 +65,10 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
   onChangeTemplateOrientation,
   onImportFmtFile,
   onOpenDesigner,
+  suggestedTemplates = [],
+  onApplySuggestedTemplate,
+  canRegradeRows = false,
+  onRegradeWithActiveTemplate,
 }) => {
   const fmtInputRef = useRef<HTMLInputElement | null>(null);
   const comboRef = useRef<HTMLDivElement | null>(null);
@@ -771,9 +779,39 @@ export const DeviceTelemetryCard: React.FC<DeviceTelemetryCardProps> = ({
       )}
 
       {errorMsg && (
-        <div style={{ fontSize: 11, color: '#ef4444', background: 'rgba(239,68,68,0.12)', padding: '6px 8px', borderRadius: 6 }}>
-          {errorMsg}
+        <div style={{ fontSize: 11, color: '#ef4444', background: 'rgba(239,68,68,0.12)', padding: '6px 8px', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span>{errorMsg}</span>
+          {suggestedTemplates.length > 0 && onApplySuggestedTemplate && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {suggestedTemplates.slice(0, 2).map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  className="uxigl-btn"
+                  style={{ padding: '4px 8px', fontSize: 11, justifyContent: 'flex-start' }}
+                  onClick={() => onApplySuggestedTemplate(tpl.id)}
+                >
+                  <RefreshCw size={11} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {tpl.name} ile Yeniden Çözümle
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+      )}
+
+      {canRegradeRows && onRegradeWithActiveTemplate && !scanning && (
+        <button
+          type="button"
+          className="uxigl-btn"
+          style={{ fontSize: 11, padding: '5px 8px' }}
+          onClick={onRegradeWithActiveTemplate}
+          title="Okunan kağıtları makineden tekrar geçirmeden aktif şablonla yeniden çözümle"
+        >
+          <RefreshCw size={12} /> Okunan Kağıtları Aktif Şablonla Yeniden Çözümle
+        </button>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>

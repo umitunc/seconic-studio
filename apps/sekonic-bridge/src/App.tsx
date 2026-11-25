@@ -38,10 +38,12 @@ import {
   loadActiveTemplateId,
   loadTemplates,
   parseFmtOrBldm,
+  regradeWireWithTemplate,
   saveActiveTemplateId,
   saveTemplates,
   templateToOmrSchema,
 } from './utils/formTemplates';
+import { decodeAutoTurkishText } from './utils/encoding';
 
 function findDecodedField(
   decoded: Record<string, string>,
@@ -91,6 +93,50 @@ function mapRawSheetToRow(parsed: RawGradedSheet, template?: FormTemplate | null
   const hasMultiMark = warnings.some((w) => w.endsWith('_multi_mark'));
   const hasErasure = warnings.some((w) => w.endsWith('_erasure_recovered'));
 
+  const questionDetails: ScannedRow['questionDetails'] = [];
+  let flaggedQuestion: ScannedRow['flaggedQuestion'] = undefined;
+  const answerDetails = parsed.answer_details ?? {};
+  const subjectFields = template
+    ? template.fields.filter((f) => f.fieldType === 'subject_questions')
+    : Object.keys(answersMap).map((k) => ({ key: k, label: k }));
+
+  for (const sf of subjectFields) {
+    const decs = answerDetails[sf.key];
+    if (Array.isArray(decs) && decs.length > 0) {
+      for (const d of decs) {
+        const state: 'ok' | 'erased' | 'multi' | 'blank' =
+          d.state === 'multi_mark'
+            ? 'multi'
+            : d.state === 'marked_with_erasure'
+              ? 'erased'
+              : d.state === 'blank'
+                ? 'blank'
+                : 'ok';
+        const maxDensity = d.densities.length > 0 ? Math.max(...d.densities) : 0;
+        const ansChar = state === 'multi' ? '*' : state === 'blank' ? '-' : (d.value ?? '-');
+        questionDetails.push({
+          q: d.index,
+          subject: sf.label,
+          fieldKey: sf.key,
+          answer: ansChar,
+          state,
+          density: maxDensity,
+          erasedOption: d.erased_label ?? undefined,
+        });
+        if (!flaggedQuestion && (state === 'multi' || state === 'erased')) {
+          flaggedQuestion = {
+            q: d.index,
+            fieldKey: sf.key,
+            subject: sf.label,
+            densities: d.densities,
+            erasedLabel: d.erased_label ?? undefined,
+            selectedLabel: d.value ?? undefined,
+          };
+        }
+      }
+    }
+  }
+
   return {
     id: parsed.seq_no,
     seqNo: parsed.seq_no,
@@ -114,8 +160,11 @@ function mapRawSheetToRow(parsed: RawGradedSheet, template?: FormTemplate | null
     decodedFields: decoded,
     answers: answersMap,
     warnings,
+    questionDetails: questionDetails.length > 0 ? questionDetails : undefined,
     rawMatrixB64: parsed.raw_matrix_b64 ?? '',
     rawWireSample: parsed.raw_wire_sample,
+    observedFrontRows: parsed.observed_front_rows,
+    flaggedQuestion,
   };
 }
 
@@ -245,9 +294,8 @@ export const App: React.FC = () => {
   }, [activeTemplate]);
 
   const handleImportFmtFile = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = typeof reader.result === 'string' ? reader.result : '';
+    void file.arrayBuffer().then((buf) => {
+      const text = decodeAutoTurkishText(buf);
       const parsed = parseFmtOrBldm(text);
       if (!parsed || parsed.fields.length === 0) {
         setErrorMsg(`'${file.name}' geçerli bir .fmt / .bldm şablonu olarak okunamadı.`);
@@ -269,8 +317,7 @@ export const App: React.FC = () => {
       setTemplates((prev) => [nextTpl, ...prev]);
       setActiveTemplateId(id);
       setErrorMsg(null);
-    };
-    reader.readAsText(file, 'windows-1254');
+    });
   }, []);
   const [rows, setRows] = useState<ScannedRow[]>([]);
   const [selectedRow, setSelectedRow] = useState<ScannedRow | null>(null);
@@ -291,7 +338,7 @@ export const App: React.FC = () => {
     stopOnError: true,
     manualFeedTimeoutSec: 2,
     densityEnabled: true,
-    densityUpperLimit: 22,
+    densityUpperLimit: 9,
     barcodeEnabled: false,
     language: 'tr',
     printerEnabled: false,
@@ -592,12 +639,17 @@ export const App: React.FC = () => {
       }
       setScanPhase('initializing');
       try {
-        const schema = templateToOmrSchema(activeTemplate, policy, hwSettings.duplex, dropoutLed);
+        const schema = templateToOmrSchema(activeTemplate, policy, hwSettings.duplex, dropoutLed, {
+          enabled: hwSettings.densityEnabled,
+          upperLimit: hwSettings.densityUpperLimit,
+        });
         await agent.startScan({
           portId: selectedPort,
           baudRate,
           simulatorMode,
           enableBarcode: hwSettings.barcodeEnabled,
+          stopOnError: hwSettings.stopOnError,
+          useSubStacker: hwSettings.subStackerEnabled,
           schema,
         });
       } catch (e) {
@@ -647,6 +699,88 @@ export const App: React.FC = () => {
     const erasure = rows.filter((r) => r.status === 'Silgi Kurtarıldı').length;
     return { total: rows.length, main, sub, erasure };
   }, [rows]);
+
+  // Modal observed row count across scanned rows for smart template suggestion (ignores single slipped sheets)
+  const modalObservedRows = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const r of rows) {
+      if (r.observedFrontRows && r.observedFrontRows > 0) {
+        counts.set(r.observedFrontRows, (counts.get(r.observedFrontRows) ?? 0) + 1);
+      }
+    }
+    let bestRows: number | null = null;
+    let bestCnt = 0;
+    for (const [rc, cnt] of counts) {
+      if (cnt > bestCnt) {
+        bestCnt = cnt;
+        bestRows = rc;
+      }
+    }
+    return bestRows;
+  }, [rows]);
+
+  const suggestedTemplates = useMemo(() => {
+    if (!modalObservedRows || !activeTemplate || modalObservedRows === activeTemplate.rows) return [];
+    return templates.filter((t) => t.rows === modalObservedRows && t.id !== activeTemplate.id);
+  }, [modalObservedRows, activeTemplate, templates]);
+
+  const canRegradeRows = useMemo(
+    () => rows.some((r) => Boolean(r.rawWireSample)),
+    [rows],
+  );
+
+  const regradeRowsWithTemplate = useCallback(
+    (tpl: FormTemplate) => {
+      const densityCfg = {
+        enabled: hwSettings.densityEnabled,
+        upperLimit: hwSettings.densityUpperLimit,
+      };
+      setRows((prev) =>
+        prev.map((row) => {
+          if (!row.rawWireSample) return row;
+          const res = regradeWireWithTemplate(row.rawWireSample, tpl, policy, densityCfg);
+          if (!res) return row;
+          return mapRawSheetToRow(
+            {
+              seq_no: row.seqNo,
+              decoded_fields: res.decoded_fields,
+              answers: res.answers,
+              answer_details: res.answer_details,
+              missing_required_field: res.missing_required_field,
+              needs_operator_review: res.needs_operator_review,
+              warnings: res.warnings,
+              raw_matrix_b64: res.raw_matrix_b64,
+              raw_wire_sample: row.rawWireSample,
+              observed_front_rows: res.observed_front_rows,
+            },
+            tpl,
+          );
+        }),
+      );
+      setSelectedRow((cur) => {
+        if (!cur?.rawWireSample) return cur;
+        const res = regradeWireWithTemplate(cur.rawWireSample, tpl, policy, densityCfg);
+        if (!res) return cur;
+        return mapRawSheetToRow(
+          {
+            seq_no: cur.seqNo,
+            decoded_fields: res.decoded_fields,
+            answers: res.answers,
+            answer_details: res.answer_details,
+            missing_required_field: res.missing_required_field,
+            needs_operator_review: res.needs_operator_review,
+            warnings: res.warnings,
+            raw_matrix_b64: res.raw_matrix_b64,
+            raw_wire_sample: cur.rawWireSample,
+            observed_front_rows: res.observed_front_rows,
+          },
+          tpl,
+        );
+      });
+      setErrorMsg(null);
+    },
+    [policy, hwSettings.densityEnabled, hwSettings.densityUpperLimit],
+  );
 
   const startSidebarResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -846,6 +980,17 @@ export const App: React.FC = () => {
                 }}
                 onImportFmtFile={handleImportFmtFile}
                 onOpenDesigner={() => setActiveTab('forms')}
+                suggestedTemplates={suggestedTemplates}
+                onApplySuggestedTemplate={(tplId) => {
+                  const tpl = templates.find((t) => t.id === tplId);
+                  if (!tpl) return;
+                  setActiveTemplateId(tpl.id);
+                  regradeRowsWithTemplate(tpl);
+                }}
+                canRegradeRows={canRegradeRows}
+                onRegradeWithActiveTemplate={() => {
+                  if (activeTemplate) regradeRowsWithTemplate(activeTemplate);
+                }}
               />
               <SheetCanvasPreview
                 row={selectedRow}
@@ -951,11 +1096,40 @@ export const App: React.FC = () => {
         cols={activeTemplate?.cols ?? 10}
         theme={theme}
         onClose={() => setReviewRow(null)}
-        onResolveAnswer={(rowId) => {
+        onResolveAnswer={(rowId, option) => {
           setRows((prev) =>
-            prev.map((r) =>
-              r.id === rowId ? { ...r, status: 'Tamam', stacker: 'main', confidence: 100 } : r,
-            ),
+            prev.map((r) => {
+              if (r.id !== rowId) return r;
+              const nextAnswers = { ...(r.answers ?? {}) };
+              const fq = r.flaggedQuestion;
+              if (fq?.fieldKey && fq.q >= 1 && nextAnswers[fq.fieldKey] !== undefined) {
+                const chars = Array.from(nextAnswers[fq.fieldKey]);
+                if (fq.q - 1 < chars.length) {
+                  chars[fq.q - 1] = option;
+                  nextAnswers[fq.fieldKey] = chars.join('');
+                }
+              }
+              const nextSummary = activeTemplate
+                ? activeTemplate.fields
+                    .filter((f) => f.fieldType === 'subject_questions')
+                    .map((f) => nextAnswers[f.key] ?? '')
+                    .join('')
+                : Object.values(nextAnswers).join('');
+              const nextDetails = r.questionDetails?.map((qd) =>
+                fq && qd.fieldKey === fq.fieldKey && qd.q === fq.q
+                  ? { ...qd, answer: option, state: 'ok' as const }
+                  : qd,
+              );
+              return {
+                ...r,
+                answers: nextAnswers,
+                answersSummary: nextSummary,
+                questionDetails: nextDetails,
+                status: 'Tamam',
+                stacker: 'main',
+                confidence: 100,
+              };
+            }),
           );
           setReviewRow(null);
         }}

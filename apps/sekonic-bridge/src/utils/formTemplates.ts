@@ -28,6 +28,8 @@ export interface DesignerField {
   hiddenFromOutput?: boolean;
   /** `Z` / `U` in `.fmt`: route sheet to sub-stacker when multi-marked. */
   routeToSubOnError?: boolean;
+  /** `S` / `V` / `U` in `.fmt`: route sheet to sub-stacker when left blank. */
+  routeToSubOnBlank?: boolean;
   /** Original `.fmt` `p[4]` (`K` = Karakter, `H` = Harf, `S` = Sayısal). */
   dataKind?: 'K' | 'H' | 'S';
 }
@@ -99,12 +101,12 @@ export const DEFAULT_TEMPLATES: FormTemplate[] = [
     multiMarkChar: '*',
     blankChar: ' ',
     fields: [
-      { id: 'yks_1', key: 'kurum_kodu', label: 'KURUM KODU', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 48, rows: 10, startCol: 26, cols: 7, color: FIELD_COLORS[3] },
-      { id: 'yks_2', key: 'öğrenci_no', label: 'ÖĞRENCİ NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 32, rows: 10, startCol: 25, cols: 5, color: FIELD_COLORS[0] },
-      { id: 'yks_3', key: 'sınıf_şube', label: 'SINIF / ŞUBE', fieldType: 'student_id', direction: 'D', alphabet: 'ABCÇDEFGĞH', startRow: 32, rows: 10, startCol: 30, cols: 2, color: FIELD_COLORS[4] },
-      { id: 'yks_4', key: 'tc_kimlik_no', label: 'T.C. KİMLİK NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 32, rows: 10, startCol: 33, cols: 11, color: FIELD_COLORS[3] },
-      { id: 'yks_5', key: 'kitapçık', label: 'KİTAPÇIK TÜRÜ', fieldType: 'booklet_type', direction: 'D', alphabet: 'A B C D', startRow: 41, rows: 7, startCol: 33, cols: 1, color: FIELD_COLORS[2] },
-      { id: 'yks_6', key: 'soyadı_adı', label: 'SOYADI ADI', fieldType: 'student_id', direction: 'D', alphabet: TR_ALPHABET, startRow: 0, rows: 29, startCol: 29, cols: 15, color: FIELD_COLORS[2] },
+      { id: 'yks_1', key: 'öğrenci_no', label: 'ÖĞRENCİ NO', fieldType: 'student_id', direction: 'D', alphabet: '0123456789', startRow: 48, rows: 10, startCol: 29, cols: 5, color: FIELD_COLORS[0] },
+      { id: 'yks_2', key: 'adı_soyadı', label: 'ADI SOYADI', fieldType: 'student_id', direction: 'D', alphabet: TR_ALPHABET, startRow: 0, rows: 29, startCol: 24, cols: 20, color: FIELD_COLORS[2] },
+      { id: 'yks_3', key: 'sınıf_1', label: 'SINIF-1', fieldType: 'student_id', direction: 'D', alphabet: '  1 1 1  ', startRow: 49, rows: 9, startCol: 28, cols: 1, color: FIELD_COLORS[4] },
+      { id: 'yks_4', key: 'sınıf_2', label: 'SINIF-2', fieldType: 'student_id', direction: 'D', alphabet: '9 0 1 2 M', startRow: 49, rows: 9, startCol: 28, cols: 1, color: FIELD_COLORS[4] },
+      { id: 'yks_5', key: 'şube', label: 'ŞUBE', fieldType: 'student_id', direction: 'D', alphabet: TR_ALPHABET, startRow: 29, rows: 29, startCol: 27, cols: 1, color: FIELD_COLORS[4] },
+      { id: 'yks_6', key: 'kitapçık', label: 'KİTAPÇIK', fieldType: 'booklet_type', direction: 'Y', alphabet: 'A B', startRow: 45, rows: 1, startCol: 33, cols: 3, color: FIELD_COLORS[2] },
       { id: 'yks_7', key: 'türkçe', label: 'TÜRKÇE', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 0, rows: 40, startCol: 19, cols: 5, color: FIELD_COLORS[1] },
       { id: 'yks_8', key: 'sosyal_bilimler', label: 'SOSYAL BİLİMLER', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 0, rows: 40, startCol: 13, cols: 5, color: FIELD_COLORS[1] },
       { id: 'yks_9', key: 'temel_matematik', label: 'TEMEL MATEMATİK', fieldType: 'subject_questions', direction: 'Y', alphabet: 'ABCDE', startRow: 0, rows: 40, startCol: 7, cols: 5, color: FIELD_COLORS[1] },
@@ -265,6 +267,21 @@ export function parseFmtOrBldm(text: string): {
   const multiMarkChar = h[4] && h[4].length > 0 ? h[4] : '*';
   const blankChar = h[5] && h[5].length > 0 ? h[5] : ' ';
   const fields: DesignerField[] = [];
+  const usedKeys = new Set<string>();
+  const allocKey = (raw: string, fallback: string): string => {
+    const base =
+      raw
+        .toLocaleLowerCase('tr-TR')
+        .replace(/[^a-z0-9çğıöşü]+/gi, '_')
+        .replace(/^_+|_+$/g, '') || fallback;
+    let unique = base;
+    let suffix = 2;
+    while (usedKeys.has(unique)) {
+      unique = `${base}_${suffix++}`;
+    }
+    usedKeys.add(unique);
+    return unique;
+  };
 
   for (let i = 1; i < lines.length; i++) {
     const p = lines[i].trim().split('=');
@@ -352,7 +369,8 @@ export function parseFmtOrBldm(text: string): {
 
       const allowMultipleMarks = modeLead === 'C' || modeLead === 'M';
       const hiddenFromOutput = modeLead === 'Q';
-      const routeToSubOnError = modeLead === 'Z' || modeLead === 'U' || modeLead === 'V' || modeLead === 'S';
+      const routeToSubOnError = modeLead === 'Z' || modeLead === 'U';
+      const routeToSubOnBlank = modeLead === 'S' || modeLead === 'V' || modeLead === 'U';
 
       const effectiveLabel = rawName || `Alan ${fields.length + 1}`;
       const lower = effectiveLabel.toLocaleLowerCase('tr-TR');
@@ -376,7 +394,7 @@ export function parseFmtOrBldm(text: string): {
 
       fields.push({
         id: `fmt_${i}`,
-        key: effectiveLabel.toLocaleLowerCase('tr-TR').replace(/[^a-z0-9çğıöşü]+/gi, '_').replace(/^_+|_+$/g, '') || `alan_${i}`,
+        key: allocKey(effectiveLabel, `alan_${i}`),
         label: effectiveLabel,
         fieldType,
         direction: dir,
@@ -391,6 +409,7 @@ export function parseFmtOrBldm(text: string): {
         allowMultipleMarks: allowMultipleMarks || undefined,
         hiddenFromOutput: hiddenFromOutput || undefined,
         routeToSubOnError: routeToSubOnError || undefined,
+        routeToSubOnBlank: routeToSubOnBlank || undefined,
         dataKind: (kindUpper === 'S' ? 'S' : kindUpper === 'H' ? 'H' : 'K'),
       });
     } else {
@@ -441,9 +460,13 @@ export function serializeTemplateToFmt(tpl: FormTemplate): string {
         : 'M'
       : f.hiddenFromOutput
         ? 'Q'
-        : f.routeToSubOnError
-          ? 'Z'
-          : 'X';
+        : f.routeToSubOnError && f.routeToSubOnBlank
+          ? 'U'
+          : f.routeToSubOnBlank
+            ? 'S'
+            : f.routeToSubOnError
+              ? 'Z'
+              : 'X';
     const sortDigit = f.sortOrder === 'reverse' ? '1' : '2';
     lines.push(`${r1}=${r2}=${c1}=${c2}=${kind}=${dir}=${f.alphabet}=${modeLead}${sortDigit}=${f.label}=`);
   }
@@ -465,6 +488,18 @@ export function computeFieldOutputWidth(f: DesignerField): number {
   return itemCount * maxTokenLen;
 }
 
+export interface DensityCapConfig {
+  enabled: boolean;
+  /** `SekOku.exe` `Koyuluk Ayarı -> Üst Sınır` (`5..16`, `sekonic.ini` default `9`). */
+  upperLimit: number;
+}
+
+function mdLevelToDensity(lvl: number): number {
+  if (lvl <= 4) return lvl * 8;
+  if (lvl <= 8) return 64 + (lvl - 5) * 16;
+  return Math.min(255, 140 + (lvl - 9) * 14);
+}
+
 /**
  * Converts a UI `FormTemplate` into the exact Rust `OmrFormSchema` JSON payload
  * accepted by `sekonic-agent` and `sekonic-grader`.
@@ -474,6 +509,7 @@ export function templateToOmrSchema(
   policy: ThresholdPolicy,
   duplex: boolean,
   dropoutLed: string,
+  densityConfig?: DensityCapConfig,
 ): Record<string, unknown> {
   const maxRows = Math.max(1, Math.round(tpl.rows));
   const maxCols = Math.max(1, Math.round(tpl.cols));
@@ -569,12 +605,13 @@ export function templateToOmrSchema(
       key: uniqueKey,
       field_type: f.fieldType,
       side: 'front',
-      required_for_valid_sheet:
-        f.fieldType === 'student_id' &&
-        (uniqueKey.includes('ogrenci') || uniqueKey.includes('öğrenci') || uniqueKey.includes('student')),
+      // Matches `SekOku.exe`: `X2` mode does NOT reject partially/fully blank fields;
+      // only explicit `S`/`V`/`U` `.fmt` modes route blanks to Sub-Stacker.
+      required_for_valid_sheet: Boolean(f.routeToSubOnBlank),
       allow_multiple_marks: Boolean(f.allowMultipleMarks),
       hidden_from_output: Boolean(f.hiddenFromOutput),
       route_to_sub_on_multi: Boolean(f.routeToSubOnError),
+      route_to_sub_on_blank: Boolean(f.routeToSubOnBlank),
       items,
     };
   });
@@ -595,6 +632,13 @@ export function templateToOmrSchema(
       effectiveMinDensity = 64 + (tpl.markThreshold - 5) * 16 + 4;
     }
   }
+
+  const saturationDensity =
+    densityConfig === undefined
+      ? 135
+      : !densityConfig.enabled
+        ? 255
+        : Math.max(effectiveMinDensity, mdLevelToDensity(Math.max(5, Math.min(16, Math.round(densityConfig.upperLimit)))) - 5);
 
   return {
     schema_version: 1,
@@ -618,8 +662,274 @@ export function templateToOmrSchema(
       strong_mark_density: policy.strongMarkDensity,
       erasure_ratio: policy.erasureRatio,
       review_confidence_floor: policy.confidenceFloor,
-      saturation_density: 135,
+      saturation_density: saturationDensity,
     },
     fields,
+  };
+}
+
+export interface RegradedWireResult {
+  decoded_fields: Record<string, string>;
+  answers: Record<string, string>;
+  answer_details: Record<
+    string,
+    Array<{
+      index: number;
+      state: 'blank' | 'marked' | 'marked_with_erasure' | 'multi_mark';
+      value: string | null;
+      multi_values: string[];
+      erased_label: string | null;
+      confidence: number;
+      densities: number[];
+    }>
+  >;
+  warnings: string[];
+  needs_operator_review: boolean;
+  missing_required_field: boolean;
+  raw_matrix_b64: string;
+  observed_front_rows: number;
+}
+
+function decodeMdChar(code: number): number {
+  if (code >= 48 && code <= 64) return code - 48; // '0'..='@'
+  if (code >= 65 && code <= 70) return code - 65 + 10; // 'A'..='F'
+  if (code >= 97 && code <= 102) return code - 97 + 10; // 'a'..='f'
+  return 0;
+}
+
+function padChars(s: string, width: number, padCh: string): string {
+  const chars = Array.from(s);
+  if (chars.length >= width) return chars.slice(0, width).join('');
+  return s + padCh.repeat(width - chars.length);
+}
+
+/**
+ * Re-grades a captured `MD0` wire string against ANY `FormTemplate` directly in the browser,
+ * matching Rust `decode_md_into_slice` + `solve_bubble_group` + `grade_sheet` 1:1.
+ * Allows instant template/orientation switching without physically re-feeding sheets.
+ */
+export function regradeWireWithTemplate(
+  wire: string,
+  tpl: FormTemplate,
+  policy: ThresholdPolicy,
+  densityConfig?: DensityCapConfig,
+): RegradedWireResult | null {
+  if (!wire) return null;
+  let body = wire.startsWith('MD') && wire.length >= 6 ? wire.slice(6) : wire.startsWith('MD') ? wire.slice(2) : wire;
+  body = body.replace(/[\0\r\n ]+$/g, '');
+  if (!body) return null;
+
+  const schema = templateToOmrSchema(tpl, policy, false, 'Red', densityConfig) as {
+    multi_mark_char: string;
+    blank_char: string;
+    grid: { front_rows: number; front_cols: number };
+    threshold_policy: {
+      min_mark_density: number;
+      strong_mark_density: number;
+      erasure_ratio: number;
+      review_confidence_floor: number;
+      saturation_density: number;
+    };
+    fields: Array<{
+      key: string;
+      field_type: string;
+      required_for_valid_sheet: boolean;
+      allow_multiple_marks: boolean;
+      hidden_from_output: boolean;
+      route_to_sub_on_multi: boolean;
+      route_to_sub_on_blank: boolean;
+      items: Array<{ index: number; options: Array<{ label: string; row: number; col: number }> }>;
+    }>;
+  };
+
+  const rows = schema.grid.front_rows;
+  const cols = schema.grid.front_cols;
+  const matrix = new Uint8Array(rows * cols);
+  const tokens = body.includes(',') ? body.split(',').filter((t) => t.length > 0) : [];
+  const observedRows = tokens.length;
+
+  const platenMask = new Array<boolean>(48).fill(false);
+  if (tokens.length >= 15) {
+    for (let ch = 47; ch >= 43; ch--) {
+      let white = 0;
+      let dark = 0;
+      for (const row of tokens) {
+        if (ch < row.length) {
+          const lvl = decodeMdChar(row.charCodeAt(ch));
+          if (lvl <= 4) white++;
+          else if (lvl >= 11) dark++;
+        }
+      }
+      if (white === 0 && dark * 100 >= tokens.length * 92) {
+        platenMask[ch] = true;
+      } else {
+        break;
+      }
+    }
+  }
+
+  for (let r = 0; r < Math.min(rows, tokens.length); r++) {
+    const rowStr = tokens[r];
+    for (let c = 0; c < Math.min(cols, rowStr.length); c++) {
+      matrix[r * cols + c] = c < 48 && platenMask[c] ? 0 : mdLevelToDensity(decodeMdChar(rowStr.charCodeAt(c)));
+    }
+  }
+
+  // Estimate 10th-percentile baseline
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < matrix.length; i++) hist[matrix[i]]++;
+  const target = Math.max(1, Math.floor(matrix.length / 10));
+  let acc = 0;
+  let baseline = 0;
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v];
+    if (acc >= target) {
+      baseline = v;
+      break;
+    }
+  }
+
+  const decoded_fields: Record<string, string> = {};
+  const answers: Record<string, string> = {};
+  const answer_details: RegradedWireResult['answer_details'] = {};
+  const warnings: string[] = [];
+  let needs_operator_review = false;
+  let missing_required_field = false;
+
+  if (observedRows > 0 && observedRows !== rows) {
+    needs_operator_review = true;
+    missing_required_field = true;
+    warnings.push(`okuma_çizgisi_uyumsuz:${observedRows}/${rows}`);
+  }
+
+  const tp = schema.threshold_policy;
+  const blankCh = Array.from(schema.blank_char || ' ')[0] ?? ' ';
+  const multiStr = schema.multi_mark_char || '*';
+
+  for (const field of schema.fields) {
+    const decisions: RegradedWireResult['answer_details'][string] = [];
+    let compact = '';
+    let fieldValid = true;
+
+    for (const group of field.items) {
+      const tokenWidth = Math.max(1, ...group.options.map((o) => Array.from(o.label).length));
+      const rawDensities: number[] = [];
+
+      if (field.allow_multiple_marks) {
+        const marked: string[] = [];
+        for (const opt of group.options) {
+          const raw = opt.row < rows && opt.col < cols ? matrix[opt.row * cols + opt.col] : 0;
+          rawDensities.push(raw);
+          if (opt.label !== '`' && Math.max(0, raw - baseline) >= tp.min_mark_density) {
+            marked.push(opt.label);
+          }
+        }
+        const joined = marked.join('');
+        compact += padChars(joined, Math.max(group.options.length, tokenWidth), blankCh);
+        decisions.push({
+          index: group.index,
+          state: marked.length === 0 ? 'blank' : 'marked',
+          value: marked.length === 0 ? null : joined,
+          multi_values: marked,
+          erased_label: null,
+          confidence: 0.98,
+          densities: rawDensities,
+        });
+        continue;
+      }
+
+      const scored: Array<[string, number]> = [];
+      for (const opt of group.options) {
+        const raw = opt.row < rows && opt.col < cols ? matrix[opt.row * cols + opt.col] : 0;
+        rawDensities.push(raw);
+        if (opt.label === '`') continue;
+        scored.push([opt.label, Math.max(0, raw - baseline)]);
+      }
+      scored.sort((a, b) => b[1] - a[1]);
+      const [l1, v1] = scored[0] ?? ['', 0];
+      const [l2, v2] = scored[1] ?? ['', 0];
+
+      if (v1 < tp.min_mark_density) {
+        compact += blankCh.repeat(tokenWidth);
+        if (field.required_for_valid_sheet || field.route_to_sub_on_blank) fieldValid = false;
+        decisions.push({
+          index: group.index,
+          state: 'blank',
+          value: null,
+          multi_values: [],
+          erased_label: null,
+          confidence: Math.max(0.5, Math.min(1, 1 - v1 / Math.max(1, tp.min_mark_density))),
+          densities: rawDensities,
+        });
+      } else if (v2 < tp.min_mark_density) {
+        compact += padChars(l1, tokenWidth, blankCh);
+        decisions.push({
+          index: group.index,
+          state: 'marked',
+          value: l1,
+          multi_values: [],
+          erased_label: null,
+          confidence: Math.max(0.6, Math.min(1, 0.6 + 0.4 * ((v1 - tp.min_mark_density) / Math.max(1, 255 - tp.min_mark_density)))),
+          densities: rawDensities,
+        });
+      } else {
+        const sat = Math.max(tp.min_mark_density, tp.saturation_density ?? 255);
+        const c1 = Math.min(v1, sat);
+        const c2 = Math.min(v2, sat);
+        const ratio = c2 / Math.max(1, c1);
+        if (c1 > c2 && (v1 >= sat || ratio <= tp.erasure_ratio)) {
+          compact += padChars(l1, tokenWidth, blankCh);
+          warnings.push(`${field.key}_q${group.index}_erasure_recovered`);
+          decisions.push({
+            index: group.index,
+            state: 'marked_with_erasure',
+            value: l1,
+            multi_values: [],
+            erased_label: l2,
+            confidence: Math.max(0.68, Math.min(0.95, 1 - ratio * 0.5)),
+            densities: rawDensities,
+          });
+        } else {
+          compact += padChars(multiStr, tokenWidth, blankCh);
+          needs_operator_review = true;
+          warnings.push(`${field.key}_q${group.index}_multi_mark`);
+          if (field.required_for_valid_sheet || field.route_to_sub_on_multi) fieldValid = false;
+          decisions.push({
+            index: group.index,
+            state: 'multi_mark',
+            value: null,
+            multi_values: scored.filter(([, v]) => v >= tp.min_mark_density).map(([l]) => l),
+            erased_label: null,
+            confidence: Math.max(0.5, Math.min(1, ratio)),
+            densities: rawDensities,
+          });
+        }
+      }
+    }
+
+    if ((field.required_for_valid_sheet || field.route_to_sub_on_multi || field.route_to_sub_on_blank) && !fieldValid) {
+      missing_required_field = true;
+    }
+
+    answer_details[field.key] = decisions;
+    if (field.hidden_from_output) continue;
+    if (field.field_type === 'subject_questions') {
+      answers[field.key] = compact;
+    } else {
+      decoded_fields[field.key] = compact;
+    }
+  }
+
+  let bin = '';
+  for (let i = 0; i < matrix.length; i++) bin += String.fromCharCode(matrix[i]);
+  return {
+    decoded_fields,
+    answers,
+    answer_details,
+    warnings,
+    needs_operator_review,
+    missing_required_field,
+    raw_matrix_b64: btoa(bin),
+    observed_front_rows: observedRows,
   };
 }

@@ -119,7 +119,15 @@ pub fn solve_bubble_group(
     let c2 = v2.min(sat);
     let clamped_ratio = f32::from(c2) / f32::from(c1.max(1));
 
-    if c1 > c2 && v1 >= t_strong && (v1 >= sat || clamped_ratio <= policy.erasure_ratio) {
+    // Matches `SekOku.exe @ 0x4af042..0x4af366`:
+    // After clamping both candidates to `saturation_density` (`Koyuluk Üst Sınırı`, default lvl 9 -> 135),
+    // a strictly darker candidate (`c1 > c2`) wins over a lighter pencil erasure when either
+    // it reaches saturation/strong density OR the contrast ratio is within `erasure_ratio`.
+    if c1 > c2
+        && (v1 >= sat
+            || (v1 >= t_strong && clamped_ratio <= policy.erasure_ratio)
+            || clamped_ratio <= policy.erasure_ratio)
+    {
         let conf = (1.0 - clamped_ratio * 0.5).clamp(0.68, 0.95);
         return BubbleDecision {
             index: group.index,

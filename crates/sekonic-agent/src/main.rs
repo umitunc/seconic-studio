@@ -99,6 +99,10 @@ enum ClientCommand {
         #[serde(default)]
         enable_barcode: bool,
         #[serde(default)]
+        stop_on_error: bool,
+        #[serde(default = "default_true")]
+        use_sub_stacker: bool,
+        #[serde(default)]
         schema: Option<OmrFormSchema>,
     },
     StopScan {
@@ -119,6 +123,10 @@ enum ClientCommand {
 
 fn default_baud_rate() -> u32 {
     38400
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Default, Clone, Serialize)]
@@ -246,6 +254,7 @@ fn default_runtime_schema() -> OmrFormSchema {
                 allow_multiple_marks: false,
                 hidden_from_output: false,
                 route_to_sub_on_multi: false,
+                route_to_sub_on_blank: false,
                 items: vec![BubbleGroup {
                     index: 1,
                     options: (0..5)
@@ -265,6 +274,7 @@ fn default_runtime_schema() -> OmrFormSchema {
                 allow_multiple_marks: false,
                 hidden_from_output: false,
                 route_to_sub_on_multi: false,
+                route_to_sub_on_blank: false,
                 items: (0..10u16)
                     .map(|q| BubbleGroup {
                         index: q + 1,
@@ -286,6 +296,8 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
     mut driver: OmrScannerDriver<T>,
     schema: OmrFormSchema,
     enable_barcode: bool,
+    stop_on_error: bool,
+    use_sub_stacker: bool,
     state: Arc<AgentState>,
 ) {
     println!(
@@ -352,7 +364,10 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
                         d.recent_sheets.push(graded.clone());
                     }
                 }
-                let target = if graded.missing_required_field {
+                let has_structural_error = graded.warnings.iter().any(|w| {
+                    w == "kağıt_ters_yön_sağ_referans" || w.starts_with("okuma_çizgisi_uyumsuz:")
+                });
+                let target = if use_sub_stacker && (graded.missing_required_field || has_structural_error) {
                     StackerTarget::Sub
                 } else {
                     StackerTarget::Main
@@ -362,6 +377,18 @@ async fn run_driver_loop<T: ScannerTransport + 'static>(
                     "type": "sheet:scanned",
                     "payload": graded
                 }));
+                if stop_on_error && has_structural_error {
+                    println!(
+                        "[sekonic-agent] Çizgi/yön uyuşmazlığı tespit edildi (stop_on_error=true), besleme durduruluyor."
+                    );
+                    state.scanning.store(false, Ordering::Relaxed);
+                    state.broadcast_json(serde_json::json!({
+                        "type": "scanner:status",
+                        "phase": "idle",
+                        "scanning": false
+                    }));
+                    break;
+                }
             }
             Ok(None) => {
                 println!("[sekonic-agent] Hopper bos, tarama tamamlandi.");
@@ -402,6 +429,8 @@ fn start_scan(
     baud_rate: u32,
     simulator_mode: bool,
     enable_barcode: bool,
+    stop_on_error: bool,
+    use_sub_stacker: bool,
     custom_schema: Option<OmrFormSchema>,
 ) -> Result<(), String> {
     if state.scanning.load(Ordering::Relaxed) {
@@ -443,7 +472,7 @@ fn start_scan(
                 .run(dev_rx),
         );
         let driver = OmrScannerDriver::new(host_tx);
-        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
+        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, stop_on_error, use_sub_stacker, st));
         return Ok(());
     }
 
@@ -453,7 +482,7 @@ fn start_scan(
             format!("Seri port ({com_port}) açılamadı: {e}")
         })?;
         let driver = OmrScannerDriver::new(transport);
-        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
+        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, stop_on_error, use_sub_stacker, st));
         return Ok(());
     }
 
@@ -469,7 +498,7 @@ fn start_scan(
             )
         })?;
         let driver = OmrScannerDriver::new(transport);
-        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
+        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, stop_on_error, use_sub_stacker, st));
         return Ok(());
     }
 
@@ -483,7 +512,7 @@ fn start_scan(
             format!("USB aygıtı (0x{pid:04X}) açılamadı: {e}")
         })?;
         let driver = OmrScannerDriver::new(transport);
-        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, st));
+        tokio::spawn(run_driver_loop(driver, schema, enable_barcode, stop_on_error, use_sub_stacker, st));
         return Ok(());
     }
 
@@ -563,9 +592,20 @@ async fn handle_client(stream: tokio::net::TcpStream, state: Arc<AgentState>) {
                                 baud_rate,
                                 simulator_mode,
                                 enable_barcode,
+                                stop_on_error,
+                                use_sub_stacker,
                                 schema,
                             }) => {
-                                match start_scan(&state, &port_id, baud_rate, simulator_mode, enable_barcode, schema) {
+                                match start_scan(
+                                    &state,
+                                    &port_id,
+                                    baud_rate,
+                                    simulator_mode,
+                                    enable_barcode,
+                                    stop_on_error,
+                                    use_sub_stacker,
+                                    schema,
+                                ) {
                                     Ok(()) => serde_json::json!({
                                         "type": "scan_started",
                                         "req_id": req_id,
